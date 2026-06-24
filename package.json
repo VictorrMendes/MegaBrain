@@ -1,0 +1,14 @@
+{
+  "name": "paios",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "build:web": "pnpm --filter web build",
+    "typecheck": "pnpm --filter web tsc --noEmit",
+    "lint": "pnpm --filter web lint"
+  },
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=9"
+  }
+}
