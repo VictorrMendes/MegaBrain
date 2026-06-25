@@ -204,9 +204,47 @@ class RAGEngine:
             result = await session.execute(
                 select(Document)
                 .where(Document.workspace_id == workspace_id)
+                .where(Document.status == DocumentStatus.ready)
                 .order_by(Document.created_at.desc())
             )
             return list(result.scalars())
+
+    async def retrieve_all_chunks(
+        self,
+        workspace_id: UUID,
+        limit: int = 5,
+    ) -> list[RetrievedChunk]:
+        """Return the first chunks of each ready document, ordered by chunk_index."""
+        sql = text("""
+            SELECT DISTINCT ON (dc.document_id)
+                dc.id,
+                dc.document_id,
+                d.filename,
+                dc.chunk_index,
+                dc.content
+            FROM document_chunks dc
+            JOIN documents d ON d.id = dc.document_id
+            WHERE dc.workspace_id = :workspace_id
+              AND d.status = 'ready'
+              AND dc.chunk_index = 0
+            ORDER BY dc.document_id, d.created_at DESC
+            LIMIT :limit
+        """)
+
+        async with self._sessions() as session:
+            rows = await session.execute(
+                sql, {"workspace_id": workspace_id, "limit": limit}
+            )
+            return [
+                RetrievedChunk(
+                    chunk_id=row[0],
+                    document_id=row[1],
+                    document_filename=row[2],
+                    chunk_index=row[3],
+                    content=row[4],
+                )
+                for row in rows.fetchall()
+            ]
 
     async def delete_document(self, document_id: UUID) -> None:
         async with self._sessions() as session:

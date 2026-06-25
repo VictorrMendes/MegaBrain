@@ -1,12 +1,15 @@
 from core.database import AsyncSessionLocal
 from engines.memory import MemoryEngine
+from engines.mission import MissionEngine
 from engines.obsidian import ObsidianEngine
+from engines.plan import LLMPlanProvider
 from engines.plugin import PluginEngine
 from engines.prompt import PromptEngine
 from engines.rag import RAGEngine
 from kernel.providers.ollama import OllamaProvider
 
 _memory_engine: MemoryEngine | None = None
+_mission_engine: MissionEngine | None = None
 _obsidian_engine: ObsidianEngine | None = None
 _plugin_engine: PluginEngine | None = None
 _prompt_engine: PromptEngine | None = None
@@ -66,3 +69,13 @@ def get_prompt_engine() -> PromptEngine:
             rag_engine=get_rag_engine(),
         )
     return _prompt_engine
+
+
+def get_mission_engine() -> MissionEngine:
+    global _mission_engine
+    if _mission_engine is None:
+        _mission_engine = MissionEngine(
+            session_factory=AsyncSessionLocal,
+            plan_providers=[LLMPlanProvider(get_llm_provider())],
+        )
+    return _mission_engine

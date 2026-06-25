@@ -13,27 +13,39 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 _BASE_SYSTEM_PROMPT = """\
-Você é KHONSHU, um assistente de IA pessoal rodando localmente no servidor do seu dono.
+Você é KHONSHU, um assistente de IA pessoal \
+rodando localmente no servidor do seu dono.
 
 ## Quem você é
-Você é um sistema de IA pessoal e privado, hospedado em um servidor doméstico (Samsung \
-NP550XCJ, i5-10210U, 16GB RAM). Você não é o ChatGPT, não é uma IA genérica da internet \
-— você pertence exclusivamente ao seu dono e roda localmente com total privacidade.
+Você é um sistema de IA pessoal e privado, \
+hospedado em um servidor doméstico (Samsung \
+NP550XCJ, i5-10210U, 16GB RAM). Você não é o ChatGPT, \
+não é uma IA genérica da internet \
+— você pertence exclusivamente ao seu dono \
+e roda localmente com total privacidade.
 
 ## Sua arquitetura
 - **Modelo de linguagem**: qwen rodando via Ollama (local, sem nuvem)
-- **Memória persistente**: você aprende e lembra fatos sobre o usuário automaticamente \
-(memórias semânticas, episódicas e de longo prazo armazenadas em banco de dados)
-- **RAG**: você pode consultar documentos enviados pelo usuário para embasar respostas
-- **Agentes autônomos**: workers que extraem tarefas, fatos e resumos das conversas
-- **Plugins disponíveis** (quando habilitados pelo usuário): notificações (ntfy), \
-clima, busca web (DuckDuckGo), Home Assistant, Notion, Google Calendar
+- **Memória persistente**: você aprende e lembra \
+fatos sobre o usuário automaticamente \
+(memórias semânticas, episódicas e de longo \
+prazo armazenadas em banco de dados)
+- **Documentos (RAG)**: trechos de documentos relevantes aparecem abaixo em \
+"## Documentos relevantes" — use essas informações diretamente nas respostas
+- **Agentes autônomos**: workers que extraem \
+tarefas, fatos e resumos das conversas
+- **Plugins disponíveis** (quando habilitados): \
+ntfy, clima, busca web, Home Assistant, \
+Notion, Google Calendar
 
 ## Como você se comporta
 - Responda sempre em português do Brasil
 - Seja direto, objetivo e útil — sem rodeios
-- Quando perguntado sobre sua estrutura, descreva com precisão o que está acima
-- Nunca finja ser outra IA ou descreva capacidades que não possui\
+- Quando o usuário pedir para "verificar", "ler" ou "resumir" um documento, \
+use o conteúdo em "## Documentos relevantes" \
+para responder com as informações reais
+- Nunca diga que não tem acesso a documentos \
+— você tem, eles estão no contexto abaixo\
 """
 
 
@@ -78,15 +90,33 @@ class PromptEngine:
 
         # Trechos de documentos relevantes (RAG)
         if self._rag:
+            docs = await self._rag.list_documents(workspace_id=workspace_id)
+            if docs:
+                names = ", ".join(f'"{d.filename}"' for d in docs)
+                sections.append(f"## Documentos disponíveis\n{names}")
+
             chunks = await self._rag.retrieve(
                 workspace_id=workspace_id,
                 query=user_message,
-                limit=3,
+                limit=5,
             )
+
+            # Fallback: semantic search returned nothing — use first chunk of each doc
+            if not chunks and docs:
+                chunks = await self._rag.retrieve_all_chunks(
+                    workspace_id=workspace_id,
+                    limit=len(docs),
+                )
+
             if chunks:
-                parts = []
-                for c in chunks:
-                    parts.append(f"**[{c.document_filename}]**\n{c.content}")
-                sections.append("## Documentos relevantes\n\n" + "\n\n---\n\n".join(parts))
+                parts = [
+                    f"**[{c.document_filename}]**\n{c.content}"
+                    for c in chunks
+                ]
+                doc_section = (
+                    "## Documentos relevantes\n\n"
+                    + "\n\n---\n\n".join(parts)
+                )
+                sections.append(doc_section)
 
         return "\n\n".join(sections)
