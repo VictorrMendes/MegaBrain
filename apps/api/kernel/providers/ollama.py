@@ -72,6 +72,7 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
             "model": self.model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": False,
+            "think": False,
         }
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(f"{self.base_url}/api/chat", json=payload)
@@ -93,17 +94,43 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
             "model": self.model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": True,
+            "think": False,
         }
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream(
                 "POST", f"{self.base_url}/api/chat", json=payload
             ) as resp:
                 resp.raise_for_status()
+                in_think = False
+                buf = ""
                 async for line in resp.aiter_lines():
                     if line:
                         data = json.loads(line)
-                        yield data.get("message", {}).get("content", "")
+                        chunk = data.get("message", {}).get("content", "")
+                        if chunk:
+                            buf += chunk
+                            # strip <think>...</think> blocks that may span chunks
+                            while True:
+                                if in_think:
+                                    end = buf.find("</think>")
+                                    if end == -1:
+                                        buf = ""
+                                        break
+                                    buf = buf[end + len("</think>"):]
+                                    in_think = False
+                                else:
+                                    start = buf.find("<think>")
+                                    if start == -1:
+                                        yield buf
+                                        buf = ""
+                                        break
+                                    if start > 0:
+                                        yield buf[:start]
+                                    buf = buf[start + len("<think>"):]
+                                    in_think = True
                         if data.get("done"):
+                            if buf and not in_think:
+                                yield buf
                             break
 
     async def embed(self, text: str) -> EmbedResult:

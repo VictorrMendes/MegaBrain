@@ -23,6 +23,14 @@ import {
 import { cn } from "@/lib/cn";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
+
+function uuid(): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (crypto as any).randomUUID?.() ?? "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 import type { ChatMessageData } from "./ChatMessage";
 
 type AppState =
@@ -213,11 +221,11 @@ export function ChatPage() {
       }
 
       const userMsg: ChatMessageData = {
-        id: crypto.randomUUID(),
+        id: uuid(),
         role: "user",
         content,
       };
-      const streamingId = crypto.randomUUID();
+      const streamingId = uuid();
       streamingIdRef.current = streamingId;
 
       const assistantMsg: ChatMessageData = {
