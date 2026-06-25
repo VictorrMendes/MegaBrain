@@ -101,13 +101,36 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
                 "POST", f"{self.base_url}/api/chat", json=payload
             ) as resp:
                 resp.raise_for_status()
+                in_think = False
+                buf = ""
                 async for line in resp.aiter_lines():
                     if line:
                         data = json.loads(line)
                         chunk = data.get("message", {}).get("content", "")
                         if chunk:
-                            yield chunk
+                            buf += chunk
+                            # strip <think>...</think> blocks that may span chunks
+                            while True:
+                                if in_think:
+                                    end = buf.find("</think>")
+                                    if end == -1:
+                                        buf = ""
+                                        break
+                                    buf = buf[end + len("</think>"):]
+                                    in_think = False
+                                else:
+                                    start = buf.find("<think>")
+                                    if start == -1:
+                                        yield buf
+                                        buf = ""
+                                        break
+                                    if start > 0:
+                                        yield buf[:start]
+                                    buf = buf[start + len("<think>"):]
+                                    in_think = True
                         if data.get("done"):
+                            if buf and not in_think:
+                                yield buf
                             break
 
     async def embed(self, text: str) -> EmbedResult:
