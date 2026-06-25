@@ -1,4 +1,4 @@
-# PAIOS — Personal AI Operating System
+# KHONSHU — Assistente de IA Pessoal
 
 Sistema operacional cognitivo local. Ver documentação completa em `HomeLab/projeto_IA/`.
 
@@ -46,8 +46,8 @@ pnpm --filter web dev
 ### 5. Baixar modelos Ollama
 
 ```bash
-docker exec -it paios-ollama-1 ollama pull qwen3:8b
-docker exec -it paios-ollama-1 ollama pull nomic-embed-text
+docker exec -it khonshu-ollama-1 ollama pull qwen3:8b
+docker exec -it khonshu-ollama-1 ollama pull nomic-embed-text
 ```
 
 ## Deploy no servidor

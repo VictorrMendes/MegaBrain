@@ -16,8 +16,8 @@ export default async function Home() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-8 p-8">
       <div className="text-center">
-        <h1 className="text-4xl font-bold tracking-tight">PAIOS</h1>
-        <p className="text-sm text-neutral-400 mt-2">Personal AI Operating System</p>
+        <h1 className="text-4xl font-bold tracking-tight">KHONSHU</h1>
+        <p className="text-sm text-neutral-400 mt-2">Assistente de IA Pessoal</p>
       </div>
 
       <div className="border border-neutral-800 rounded-lg p-6 w-full max-w-sm">

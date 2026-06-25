@@ -9,11 +9,11 @@ services:
 
   postgres:
     volumes:
-      - paios_postgres_dev:/var/lib/postgresql/data
+      - khonshu_postgres_dev:/var/lib/postgresql/data
 
   redis:
     volumes:
-      - paios_redis_dev:/data
+      - khonshu_redis_dev:/data
 
   # API e Web não sobem via compose no dev — rodam localmente:
   #   uv run fastapi dev apps/api/main.py --port 8100
@@ -25,5 +25,5 @@ services:
     profiles: ["prod"]
 
 volumes:
-  paios_postgres_dev:
-  paios_redis_dev:
+  khonshu_postgres_dev:
+  khonshu_redis_dev:
