@@ -1,11 +1,13 @@
 from core.database import AsyncSessionLocal
 from engines.memory import MemoryEngine
+from engines.obsidian import ObsidianEngine
 from engines.plugin import PluginEngine
 from engines.prompt import PromptEngine
 from engines.rag import RAGEngine
 from kernel.providers.ollama import OllamaProvider
 
 _memory_engine: MemoryEngine | None = None
+_obsidian_engine: ObsidianEngine | None = None
 _plugin_engine: PluginEngine | None = None
 _prompt_engine: PromptEngine | None = None
 _rag_engine: RAGEngine | None = None
@@ -37,6 +39,16 @@ def get_rag_engine() -> RAGEngine:
             embedding_provider=get_llm_provider(),
         )
     return _rag_engine
+
+
+def get_obsidian_engine() -> ObsidianEngine:
+    global _obsidian_engine
+    if _obsidian_engine is None:
+        _obsidian_engine = ObsidianEngine(
+            session_factory=AsyncSessionLocal,
+            rag_engine=get_rag_engine(),
+        )
+    return _obsidian_engine
 
 
 def get_plugin_engine() -> PluginEngine:

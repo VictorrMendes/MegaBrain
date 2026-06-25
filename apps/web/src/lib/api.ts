@@ -1,5 +1,46 @@
 const API_URL = "/api";
 
+export interface ObsidianNoteInput {
+  path: string;
+  content: string;
+  last_modified?: string;
+}
+
+export interface ObsidianSyncResponse {
+  added: number;
+  updated: number;
+  unchanged: number;
+  errors: string[];
+}
+
+export interface ObsidianNote {
+  id: string;
+  path: string;
+  title: string;
+  tags: string[];
+  frontmatter: Record<string, string>;
+  last_modified: string | null;
+  document_id: string | null;
+}
+
+export interface GraphNode {
+  id: string;
+  title: string;
+  tags: string[];
+  path: string;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  link_text: string | null;
+}
+
+export interface ObsidianGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -234,5 +275,30 @@ export const api = {
       { method: "DELETE" }
     );
     if (!res.ok) throw new Error("Failed to delete plugin");
+  },
+
+  async syncObsidian(
+    workspaceId: string,
+    notes: ObsidianNoteInput[]
+  ): Promise<ObsidianSyncResponse> {
+    const res = await fetch(`${API_URL}/workspaces/${workspaceId}/obsidian/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes }),
+    });
+    if (!res.ok) throw new Error("Failed to sync Obsidian vault");
+    return res.json();
+  },
+
+  async getObsidianGraph(workspaceId: string): Promise<ObsidianGraph> {
+    const res = await fetch(`${API_URL}/workspaces/${workspaceId}/obsidian/graph`);
+    if (!res.ok) throw new Error("Failed to fetch graph");
+    return res.json();
+  },
+
+  async listObsidianNotes(workspaceId: string): Promise<ObsidianNote[]> {
+    const res = await fetch(`${API_URL}/workspaces/${workspaceId}/obsidian/notes`);
+    if (!res.ok) throw new Error("Failed to list notes");
+    return res.json();
   },
 };

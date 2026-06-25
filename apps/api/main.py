@@ -22,6 +22,7 @@ from kernel.logger import get_logger, setup_logging
 from routers.conversations import router as conversations_router
 from routers.documents import router as documents_router
 from routers.memories import router as memories_router
+from routers.obsidian import router as obsidian_router
 from routers.plugins import router as plugins_router
 from routers.workspaces import router as workspaces_router
 
@@ -83,3 +84,4 @@ app.include_router(memories_router)
 app.include_router(conversations_router)
 app.include_router(documents_router)
 app.include_router(plugins_router)
+app.include_router(obsidian_router)
