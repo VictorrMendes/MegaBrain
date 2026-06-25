@@ -72,6 +72,7 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
             "model": self.model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": False,
+            "think": False,
         }
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(f"{self.base_url}/api/chat", json=payload)
@@ -93,6 +94,7 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
             "model": self.model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": True,
+            "think": False,
         }
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream(
