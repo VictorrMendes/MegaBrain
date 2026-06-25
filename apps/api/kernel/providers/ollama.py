@@ -5,7 +5,13 @@ import httpx
 
 from kernel.config import settings
 from kernel.logger import get_logger
-from .base import EmbedResult, EmbeddingProvider, GenerateResult, LLMProvider
+from .base import (
+    ChatMessage,
+    EmbedResult,
+    EmbeddingProvider,
+    GenerateResult,
+    LLMProvider,
+)
 
 logger = get_logger(__name__)
 
@@ -56,6 +62,47 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
                     if line:
                         data = json.loads(line)
                         yield data.get("response", "")
+                        if data.get("done"):
+                            break
+
+    async def chat(
+        self, messages: list[ChatMessage], **kwargs
+    ) -> GenerateResult:
+        payload = {
+            "model": self.model,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "stream": False,
+        }
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(f"{self.base_url}/api/chat", json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+
+        content = data["message"]["content"]
+        logger.debug("ollama.chat", model=self.model, tokens=data.get("eval_count"))
+        return GenerateResult(
+            content=content,
+            model=self.model,
+            tokens_used=data.get("eval_count", 0),
+        )
+
+    async def chat_stream(
+        self, messages: list[ChatMessage], **kwargs
+    ) -> AsyncIterator[str]:
+        payload = {
+            "model": self.model,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "stream": True,
+        }
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            async with client.stream(
+                "POST", f"{self.base_url}/api/chat", json=payload
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if line:
+                        data = json.loads(line)
+                        yield data.get("message", {}).get("content", "")
                         if data.get("done"):
                             break
 

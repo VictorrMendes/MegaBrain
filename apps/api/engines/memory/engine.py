@@ -45,7 +45,7 @@ class MemoryEngine:
 
         try:
             await event_bus.publish(
-                "paios.memories",
+                "khonshu.memories",
                 {
                     "type": "memory.created",
                     "memory_id": str(memory.id),

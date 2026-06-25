@@ -9,8 +9,9 @@ from kernel.logger import get_logger, setup_logging
 from core.health import router as health_router
 from routers.workspaces import router as workspaces_router
 from routers.memories import router as memories_router
+from routers.conversations import router as conversations_router
 
-logger = get_logger("paios.api")
+logger = get_logger("khonshu.api")
 
 
 @asynccontextmanager
@@ -25,7 +26,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="PAIOS API",
+    title="KHONSHU API",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -41,3 +42,4 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(workspaces_router)
 app.include_router(memories_router)
+app.include_router(conversations_router)

@@ -1,4 +1,5 @@
 from .base import (
+    ChatMessage,
     EmbedResult,
     EmbeddingProvider,
     GenerateResult,
@@ -9,6 +10,7 @@ from .base import (
 from .ollama import OllamaProvider
 
 __all__ = [
+    "ChatMessage",
     "LLMProvider",
     "EmbeddingProvider",
     "VectorProvider",

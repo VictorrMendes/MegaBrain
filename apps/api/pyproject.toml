@@ -1,7 +1,7 @@
 [project]
-name = "paios-api"
+name = "khonshu-api"
 version = "0.1.0"
-description = "PAIOS — Personal AI Operating System · API"
+description = "KHONSHU — Assistente de IA Pessoal · API"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.115.0",

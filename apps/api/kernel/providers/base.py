@@ -4,6 +4,12 @@ from typing import AsyncIterator
 
 
 @dataclass
+class ChatMessage:
+    role: str  # "user" | "assistant" | "system"
+    content: str
+
+
+@dataclass
 class GenerateResult:
     content: str
     model: str
@@ -34,6 +40,16 @@ class LLMProvider(ABC):
     @abstractmethod
     async def stream(
         self, prompt: str, system: str | None = None, **kwargs
+    ) -> AsyncIterator[str]: ...
+
+    @abstractmethod
+    async def chat(
+        self, messages: list[ChatMessage], **kwargs
+    ) -> GenerateResult: ...
+
+    @abstractmethod
+    async def chat_stream(
+        self, messages: list[ChatMessage], **kwargs
     ) -> AsyncIterator[str]: ...
 
 

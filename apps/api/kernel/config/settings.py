@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     env: str = "development"
     log_level: str = "INFO"
 
-    database_url: str = "postgresql+asyncpg://paios:paios@localhost:5432/paios"
+    database_url: str = "postgresql+asyncpg://khonshu:khonshu@localhost:5432/khonshu"
     redis_url: str = "redis://localhost:6379"
 
     ollama_base_url: str = "http://localhost:11434"
@@ -15,12 +15,12 @@ class Settings(BaseSettings):
     ollama_embedding_model: str = "nomic-embed-text"
 
     ntfy_url: str = "http://localhost:2586"
-    ntfy_topic: str = "paios"
+    ntfy_topic: str = "khonshu"
 
     influxdb_url: str = "http://localhost:8086"
     influxdb_token: str = ""
     influxdb_org: str = "vmserver"
-    influxdb_bucket: str = "paios"
+    influxdb_bucket: str = "khonshu"
 
     secret_key: str = "changeme"
     access_token_expire_minutes: int = 60
