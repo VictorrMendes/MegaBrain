@@ -66,11 +66,12 @@ app = FastAPI(
     title="KHONSHU API",
     version="0.1.0",
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3100", "http://192.168.1.26:3100"],
+    allow_origins=["http://localhost:3100", "http://192.168.1.26:3100", "https://khonshu.vmserver.app.br"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

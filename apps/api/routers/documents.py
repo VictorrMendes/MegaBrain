@@ -20,7 +20,7 @@ _ALLOWED_CONTENT_TYPES = {
 _MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
-@router.post("/", response_model=DocumentResponse, status_code=201)
+@router.post("", response_model=DocumentResponse, status_code=201)
 async def upload_document(
     workspace_id: UUID,
     file: UploadFile,
@@ -50,7 +50,7 @@ async def upload_document(
     return doc
 
 
-@router.get("/", response_model=list[DocumentResponse])
+@router.get("", response_model=list[DocumentResponse])
 async def list_documents(
     workspace_id: UUID,
     rag_engine: RAGEngine = Depends(get_rag_engine),
