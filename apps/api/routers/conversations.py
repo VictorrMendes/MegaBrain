@@ -102,7 +102,7 @@ async def send_message(
     messages = [ChatMessage(role="system", content=system_prompt)]
     for msg in history:
         messages.append(ChatMessage(role=msg.role.value, content=msg.content))
-    messages.append(ChatMessage(role="user", content=f"/no_think\n{data.content}"))
+    messages.append(ChatMessage(role="user", content=data.content))
 
     result = await llm.chat(messages)
 
@@ -157,7 +157,7 @@ async def send_message_stream(
     messages = [ChatMessage(role="system", content=system_prompt)]
     for msg in history:
         messages.append(ChatMessage(role=msg.role.value, content=msg.content))
-    messages.append(ChatMessage(role="user", content=f"/no_think\n{data.content}"))
+    messages.append(ChatMessage(role="user", content=data.content))
 
     full_response: list[str] = []
 
