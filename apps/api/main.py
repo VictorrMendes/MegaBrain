@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -6,9 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 import kernel.plugins  # noqa: F401 — registers all plugins on import
 from core.database import AsyncSessionLocal
 from core.dependencies import (
+    get_inbox_engine,
     get_llm_provider,
     get_memory_engine,
     get_plugin_engine,
+    get_scheduler_engine,
 )
 from core.health import router as health_router
 from kernel.agents import (
@@ -21,10 +24,12 @@ from kernel.events import event_bus
 from kernel.logger import get_logger, setup_logging
 from routers.conversations import router as conversations_router
 from routers.documents import router as documents_router
+from routers.inbox import router as inbox_router
 from routers.memories import router as memories_router
 from routers.missions import router as missions_router
 from routers.obsidian import router as obsidian_router
 from routers.plugins import router as plugins_router
+from routers.scheduler import router as scheduler_router
 from routers.workspaces import router as workspaces_router
 
 logger = get_logger("khonshu.api")
@@ -55,11 +60,39 @@ async def lifespan(app: FastAPI):
     event_bus.subscribe("khonshu.messages", task_worker)
     event_bus.subscribe("khonshu.messages", summarizer_worker)
 
+    # Inicializa InboxEngine antecipadamente (cria singletons)
+    get_inbox_engine()
+
+    # Inicia o tick loop do Scheduler em background
+    scheduler = get_scheduler_engine()
+
+    async def _scheduler_tick_loop() -> None:
+        while True:
+            try:
+                await scheduler.tick()
+            except Exception as exc:
+                logger.warning("scheduler.tick_error", error=str(exc))
+            await asyncio.sleep(60)
+
+    tick_task = asyncio.create_task(_scheduler_tick_loop())
+
     logger.info(
         "api.ready",
-        workers=["memory_extractor", "task_extractor", "summarizer"],
+        workers=[
+            "memory_extractor",
+            "task_extractor",
+            "summarizer",
+            "scheduler_tick",
+        ],
     )
     yield
+
+    tick_task.cancel()
+    try:
+        await tick_task
+    except asyncio.CancelledError:
+        pass
+
     await event_bus.disconnect()
     logger.info("api.shutdown")
 
@@ -90,4 +123,6 @@ app.include_router(conversations_router)
 app.include_router(documents_router)
 app.include_router(plugins_router)
 app.include_router(missions_router)
+app.include_router(scheduler_router)
+app.include_router(inbox_router)
 app.include_router(obsidian_router)
