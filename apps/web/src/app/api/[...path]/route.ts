@@ -5,8 +5,10 @@ const API_INTERNAL_URL =
 
 async function proxy(req: NextRequest): Promise<Response> {
   const url = req.nextUrl;
-  // strip leading /api prefix
-  const upstreamPath = url.pathname.replace(/^\/api/, "");
+  // strip leading /api prefix and normalize trailing slash
+  const upstreamPath = url.pathname
+    .replace(/^\/api/, "")
+    .replace(/\/$/, "") || "/";
   const upstreamUrl = `${API_INTERNAL_URL}${upstreamPath}${url.search}`;
 
   const headers = new Headers(req.headers);
