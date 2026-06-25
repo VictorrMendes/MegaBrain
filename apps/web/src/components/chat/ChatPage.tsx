@@ -25,10 +25,8 @@ import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
 
 function uuid(): string {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
-    return uuid();
-  }
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (crypto as any).randomUUID?.() ?? "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
   });
