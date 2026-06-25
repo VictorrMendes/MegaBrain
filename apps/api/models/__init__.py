@@ -3,6 +3,7 @@ from .conversation import Conversation, Message, MessageRole
 from .document import Document, DocumentChunk, DocumentStatus
 from .memory import Memory, MemoryType
 from .workspace import Workspace
+from .workspace_plugin import WorkspacePlugin
 
 __all__ = [
     "Base",
@@ -15,4 +16,5 @@ __all__ = [
     "Document",
     "DocumentChunk",
     "DocumentStatus",
+    "WorkspacePlugin",
 ]

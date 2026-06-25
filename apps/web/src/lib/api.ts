@@ -39,6 +39,21 @@ export interface Document {
   updated_at: string;
 }
 
+export interface AvailablePlugin {
+  name: string;
+  description: string;
+}
+
+export interface WorkspacePlugin {
+  id: string;
+  workspace_id: string;
+  plugin_name: string;
+  is_enabled: boolean;
+  config: Record<string, string>;
+  created_at: string;
+  updated_at: string;
+}
+
 export const api = {
   async listWorkspaces(): Promise<Workspace[]> {
     const res = await fetch(`${API_URL}/workspaces/`);
@@ -165,5 +180,59 @@ export const api = {
       { method: "DELETE" }
     );
     if (!res.ok) throw new Error("Failed to delete document");
+  },
+
+  async listAvailablePlugins(workspaceId: string): Promise<AvailablePlugin[]> {
+    const res = await fetch(
+      `${API_URL}/workspaces/${workspaceId}/plugins/available`
+    );
+    if (!res.ok) throw new Error("Failed to list available plugins");
+    return res.json();
+  },
+
+  async listWorkspacePlugins(workspaceId: string): Promise<WorkspacePlugin[]> {
+    const res = await fetch(`${API_URL}/workspaces/${workspaceId}/plugins/`);
+    if (!res.ok) throw new Error("Failed to list plugins");
+    return res.json();
+  },
+
+  async upsertPlugin(
+    workspaceId: string,
+    pluginName: string,
+    config: Record<string, string>,
+    isEnabled: boolean = true
+  ): Promise<WorkspacePlugin> {
+    const res = await fetch(`${API_URL}/workspaces/${workspaceId}/plugins/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plugin_name: pluginName, config, is_enabled: isEnabled }),
+    });
+    if (!res.ok) throw new Error("Failed to save plugin");
+    return res.json();
+  },
+
+  async togglePlugin(
+    workspaceId: string,
+    pluginId: string,
+    isEnabled: boolean
+  ): Promise<WorkspacePlugin> {
+    const res = await fetch(
+      `${API_URL}/workspaces/${workspaceId}/plugins/${pluginId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_enabled: isEnabled }),
+      }
+    );
+    if (!res.ok) throw new Error("Failed to toggle plugin");
+    return res.json();
+  },
+
+  async deletePlugin(workspaceId: string, pluginId: string): Promise<void> {
+    const res = await fetch(
+      `${API_URL}/workspaces/${workspaceId}/plugins/${pluginId}`,
+      { method: "DELETE" }
+    );
+    if (!res.ok) throw new Error("Failed to delete plugin");
   },
 };

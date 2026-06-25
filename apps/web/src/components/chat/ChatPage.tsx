@@ -8,8 +8,18 @@ import {
   PaperclipIcon,
   FileTextIcon,
   Trash2Icon,
+  PuzzleIcon,
+  CheckIcon,
+  XIcon,
 } from "lucide-react";
-import { api, type Conversation, type Document, type Workspace } from "@/lib/api";
+import {
+  api,
+  type AvailablePlugin,
+  type Conversation,
+  type Document,
+  type Workspace,
+  type WorkspacePlugin,
+} from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
@@ -20,6 +30,44 @@ type AppState =
   | { status: "error"; message: string }
   | { status: "ready"; workspace: Workspace };
 
+type ConfigModal = {
+  plugin: AvailablePlugin;
+  existing: WorkspacePlugin | null;
+};
+
+const PLUGIN_LABELS: Record<string, string> = {
+  ntfy: "ntfy",
+  weather: "Clima",
+  web_search: "Web Search",
+  home_assistant: "Home Assistant",
+  notion: "Notion",
+  google_calendar: "Google Calendar",
+};
+
+const PLUGIN_CONFIG_FIELDS: Record<string, { key: string; label: string; placeholder: string }[]> = {
+  ntfy: [
+    { key: "url", label: "URL do servidor", placeholder: "http://192.168.1.26:2586" },
+    { key: "topic", label: "Tópico", placeholder: "khonshu" },
+  ],
+  weather: [
+    { key: "default_location", label: "Cidade padrão", placeholder: "São Paulo" },
+  ],
+  web_search: [],
+  home_assistant: [
+    { key: "url", label: "URL do HA", placeholder: "http://homeassistant.local:8123" },
+    { key: "token", label: "Long-lived token", placeholder: "eyJ..." },
+  ],
+  notion: [
+    { key: "token", label: "Integration token", placeholder: "secret_..." },
+    { key: "default_page_id", label: "ID da página padrão", placeholder: "..." },
+  ],
+  google_calendar: [
+    { key: "access_token", label: "Access token OAuth2", placeholder: "ya29..." },
+    { key: "calendar_id", label: "Calendar ID", placeholder: "primary" },
+    { key: "timezone", label: "Fuso horário", placeholder: "America/Sao_Paulo" },
+  ],
+};
+
 export function ChatPage() {
   const [appState, setAppState] = useState<AppState>({ status: "loading" });
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -28,6 +76,10 @@ export function ChatPage() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [availablePlugins, setAvailablePlugins] = useState<AvailablePlugin[]>([]);
+  const [workspacePlugins, setWorkspacePlugins] = useState<WorkspacePlugin[]>([]);
+  const [configModal, setConfigModal] = useState<ConfigModal | null>(null);
+  const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const streamingIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -42,12 +94,16 @@ export function ChatPage() {
         const workspace = workspaces[0];
         setAppState({ status: "ready", workspace });
 
-        const [convs, docs] = await Promise.all([
+        const [convs, docs, available, wPlugins] = await Promise.all([
           api.listConversations(workspace.id),
           api.listDocuments(workspace.id),
+          api.listAvailablePlugins(workspace.id),
+          api.listWorkspacePlugins(workspace.id),
         ]);
         setConversations(convs);
         setDocuments(docs);
+        setAvailablePlugins(available);
+        setWorkspacePlugins(wPlugins);
 
         if (convs.length > 0) {
           await loadConversation(workspace.id, convs[0].id);
@@ -106,6 +162,40 @@ export function ChatPage() {
     if (appState.status !== "ready") return;
     await api.deleteDocument(appState.workspace.id, docId);
     setDocuments((prev) => prev.filter((d) => d.id !== docId));
+  }
+
+  function openPluginConfig(plugin: AvailablePlugin) {
+    if (appState.status !== "ready") return;
+    const existing = workspacePlugins.find((p) => p.plugin_name === plugin.name) ?? null;
+    setConfigModal({ plugin, existing });
+    setConfigValues(existing?.config ?? {});
+  }
+
+  async function handleSavePlugin() {
+    if (!configModal || appState.status !== "ready") return;
+    const saved = await api.upsertPlugin(
+      appState.workspace.id,
+      configModal.plugin.name,
+      configValues,
+      true,
+    );
+    setWorkspacePlugins((prev) => {
+      const idx = prev.findIndex((p) => p.plugin_name === saved.plugin_name);
+      return idx >= 0 ? prev.map((p, i) => (i === idx ? saved : p)) : [...prev, saved];
+    });
+    setConfigModal(null);
+  }
+
+  async function handleTogglePlugin(wp: WorkspacePlugin) {
+    if (appState.status !== "ready") return;
+    const updated = await api.togglePlugin(appState.workspace.id, wp.id, !wp.is_enabled);
+    setWorkspacePlugins((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+  }
+
+  async function handleRemovePlugin(wp: WorkspacePlugin) {
+    if (appState.status !== "ready") return;
+    await api.deletePlugin(appState.workspace.id, wp.id);
+    setWorkspacePlugins((prev) => prev.filter((p) => p.id !== wp.id));
   }
 
   const handleSend = useCallback(
@@ -290,6 +380,72 @@ export function ChatPage() {
             )}
           </div>
         </div>
+
+        {/* Plugins */}
+        <div className="border-t border-neutral-800 flex flex-col max-h-56">
+          <div className="flex items-center justify-between px-4 py-2">
+            <span className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">
+              Plugins
+            </span>
+            <PuzzleIcon size={13} className="text-neutral-600" />
+          </div>
+
+          <div className="overflow-y-auto pb-2">
+            {availablePlugins.length === 0 ? (
+              <p className="px-4 pb-2 text-xs text-neutral-600">Carregando...</p>
+            ) : (
+              availablePlugins.map((ap) => {
+                const wp = workspacePlugins.find((p) => p.plugin_name === ap.name);
+                const isActive = wp?.is_enabled ?? false;
+                return (
+                  <div
+                    key={ap.name}
+                    className="group flex items-center gap-2 px-4 py-1.5 text-xs"
+                  >
+                    <button
+                      onClick={() => wp && handleTogglePlugin(wp)}
+                      disabled={!wp}
+                      className={cn(
+                        "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
+                        isActive
+                          ? "border-emerald-500 bg-emerald-500 text-neutral-900"
+                          : "border-neutral-700 text-transparent"
+                      )}
+                      title={isActive ? "Desativar" : "Ativar"}
+                    >
+                      <CheckIcon size={10} />
+                    </button>
+                    <span
+                      className={cn(
+                        "flex-1 truncate cursor-pointer",
+                        isActive ? "text-neutral-200" : "text-neutral-500"
+                      )}
+                      onClick={() => openPluginConfig(ap)}
+                    >
+                      {PLUGIN_LABELS[ap.name] ?? ap.name}
+                    </span>
+                    {wp && (
+                      <button
+                        onClick={() => handleRemovePlugin(wp)}
+                        className="hidden group-hover:flex h-5 w-5 items-center justify-center rounded text-neutral-600 hover:text-red-400 transition-colors"
+                      >
+                        <XIcon size={10} />
+                      </button>
+                    )}
+                    {!wp && (
+                      <button
+                        onClick={() => openPluginConfig(ap)}
+                        className="text-[10px] text-neutral-600 hover:text-neutral-300 transition-colors"
+                      >
+                        config
+                      </button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
       </aside>
 
       {/* Main */}
@@ -304,6 +460,53 @@ export function ChatPage() {
 
         <ChatInput onSend={handleSend} disabled={isStreaming} />
       </main>
+
+      {/* Plugin config modal */}
+      {configModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="w-96 rounded-xl border border-neutral-700 bg-neutral-900 p-6 shadow-2xl">
+            <h2 className="mb-1 text-sm font-semibold text-neutral-100">
+              {PLUGIN_LABELS[configModal.plugin.name] ?? configModal.plugin.name}
+            </h2>
+            <p className="mb-4 text-xs text-neutral-500">{configModal.plugin.description}</p>
+
+            <div className="space-y-3">
+              {(PLUGIN_CONFIG_FIELDS[configModal.plugin.name] ?? []).map((field) => (
+                <div key={field.key}>
+                  <label className="block text-xs text-neutral-400 mb-1">{field.label}</label>
+                  <input
+                    type="text"
+                    value={configValues[field.key] ?? ""}
+                    onChange={(e) =>
+                      setConfigValues((prev) => ({ ...prev, [field.key]: e.target.value }))
+                    }
+                    placeholder={field.placeholder}
+                    className="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-xs text-neutral-100 placeholder-neutral-600 outline-none focus:border-neutral-500"
+                  />
+                </div>
+              ))}
+              {(PLUGIN_CONFIG_FIELDS[configModal.plugin.name] ?? []).length === 0 && (
+                <p className="text-xs text-neutral-500">Nenhuma configuração necessária.</p>
+              )}
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setConfigModal(null)}
+                className="rounded-md px-4 py-2 text-xs text-neutral-400 hover:text-neutral-200 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSavePlugin}
+                className="rounded-md bg-neutral-700 px-4 py-2 text-xs text-neutral-100 hover:bg-neutral-600 transition-colors"
+              >
+                Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

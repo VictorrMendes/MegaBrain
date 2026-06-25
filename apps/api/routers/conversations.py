@@ -3,13 +3,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
-from core.dependencies import get_llm_provider, get_memory_engine, get_prompt_engine
-from engines.memory import MemoryEngine
+from core.dependencies import get_llm_provider, get_prompt_engine
 from engines.prompt import PromptEngine
+from kernel.events import event_bus
 from kernel.providers.base import ChatMessage, LLMProvider
 from models.conversation import Conversation, Message, MessageRole
 from schemas.conversation import (
@@ -181,6 +181,28 @@ async def send_message_stream(
             db.add(user_msg)
             db.add(assistant_msg)
         await db.commit()
+
+        count_result = await db.execute(
+            select(func.count()).where(
+                Message.conversation_id == conversation_id
+            )
+        )
+        msg_count = count_result.scalar_one()
+
+        try:
+            await event_bus.publish(
+                "khonshu.messages",
+                {
+                    "type": "message.completed",
+                    "workspace_id": str(workspace_id),
+                    "conversation_id": str(conversation_id),
+                    "user_message": data.content,
+                    "assistant_message": response_text,
+                    "message_count": msg_count,
+                },
+            )
+        except RuntimeError:
+            pass
 
         yield f"data: {json.dumps({'done': True})}\n\n"
 

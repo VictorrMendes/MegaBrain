@@ -1,10 +1,12 @@
 from core.database import AsyncSessionLocal
 from engines.memory import MemoryEngine
+from engines.plugin import PluginEngine
 from engines.prompt import PromptEngine
 from engines.rag import RAGEngine
 from kernel.providers.ollama import OllamaProvider
 
 _memory_engine: MemoryEngine | None = None
+_plugin_engine: PluginEngine | None = None
 _prompt_engine: PromptEngine | None = None
 _rag_engine: RAGEngine | None = None
 _llm_provider: OllamaProvider | None = None
@@ -35,6 +37,13 @@ def get_rag_engine() -> RAGEngine:
             embedding_provider=get_llm_provider(),
         )
     return _rag_engine
+
+
+def get_plugin_engine() -> PluginEngine:
+    global _plugin_engine
+    if _plugin_engine is None:
+        _plugin_engine = PluginEngine(session_factory=AsyncSessionLocal)
+    return _plugin_engine
 
 
 def get_prompt_engine() -> PromptEngine:
