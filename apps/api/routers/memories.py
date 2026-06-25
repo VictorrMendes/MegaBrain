@@ -13,7 +13,7 @@ router = APIRouter(
 )
 
 
-@router.post("/", response_model=MemoryResponse, status_code=201)
+@router.post("", response_model=MemoryResponse, status_code=201)
 async def create_memory(
     workspace_id: UUID,
     data: MemoryCreate,
@@ -27,7 +27,7 @@ async def create_memory(
     )
 
 
-@router.get("/", response_model=list[MemoryResponse])
+@router.get("", response_model=list[MemoryResponse])
 async def list_memories(
     workspace_id: UUID,
     type: MemoryType | None = None,

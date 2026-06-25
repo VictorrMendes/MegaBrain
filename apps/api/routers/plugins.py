@@ -25,7 +25,7 @@ async def list_available_plugins():
     return PluginRegistry.list_all()
 
 
-@router.get("/", response_model=list[WorkspacePluginResponse])
+@router.get("", response_model=list[WorkspacePluginResponse])
 async def list_workspace_plugins(
     workspace_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -38,7 +38,7 @@ async def list_workspace_plugins(
     return result.scalars().all()
 
 
-@router.post("/", response_model=WorkspacePluginResponse, status_code=201)
+@router.post("", response_model=WorkspacePluginResponse, status_code=201)
 async def create_or_update_plugin(
     workspace_id: UUID,
     data: WorkspacePluginCreate,

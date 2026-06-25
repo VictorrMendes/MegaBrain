@@ -11,7 +11,7 @@ from schemas.workspace import WorkspaceCreate, WorkspaceResponse
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
-@router.post("/", response_model=WorkspaceResponse, status_code=201)
+@router.post("", response_model=WorkspaceResponse, status_code=201)
 async def create_workspace(
     data: WorkspaceCreate,
     db: AsyncSession = Depends(get_db),
@@ -23,7 +23,7 @@ async def create_workspace(
     return ws
 
 
-@router.get("/", response_model=list[WorkspaceResponse])
+@router.get("", response_model=list[WorkspaceResponse])
 async def list_workspaces(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(Workspace).where(Workspace.is_active.is_(True))

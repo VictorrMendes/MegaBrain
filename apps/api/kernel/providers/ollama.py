@@ -102,7 +102,9 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
                 async for line in resp.aiter_lines():
                     if line:
                         data = json.loads(line)
-                        yield data.get("message", {}).get("content", "")
+                        chunk = data.get("message", {}).get("content", "")
+                        if chunk:
+                            yield chunk
                         if data.get("done"):
                             break
 

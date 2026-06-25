@@ -26,7 +26,7 @@ router = APIRouter(
 )
 
 
-@router.post("/", response_model=ConversationResponse, status_code=201)
+@router.post("", response_model=ConversationResponse, status_code=201)
 async def create_conversation(
     workspace_id: UUID,
     data: ConversationCreate,
@@ -39,7 +39,7 @@ async def create_conversation(
     return conv
 
 
-@router.get("/", response_model=list[ConversationResponse])
+@router.get("", response_model=list[ConversationResponse])
 async def list_conversations(
     workspace_id: UUID,
     db: AsyncSession = Depends(get_db),
