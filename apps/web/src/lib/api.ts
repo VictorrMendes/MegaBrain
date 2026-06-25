@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8100";
+const API_URL = "/api";
 
 export interface Workspace {
   id: string;
@@ -23,6 +23,20 @@ export interface Message {
   role: "user" | "assistant" | "system";
   content: string;
   created_at: string;
+}
+
+export type DocumentStatus = "pending" | "processing" | "ready" | "failed";
+
+export interface Document {
+  id: string;
+  workspace_id: string;
+  filename: string;
+  content_type: string;
+  file_size: number;
+  status: DocumentStatus;
+  chunk_count: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export const api = {
@@ -126,5 +140,30 @@ export const api = {
     } catch (e) {
       onError(e instanceof Error ? e : new Error("Stream error"));
     }
+  },
+
+  async listDocuments(workspaceId: string): Promise<Document[]> {
+    const res = await fetch(`${API_URL}/workspaces/${workspaceId}/documents/`);
+    if (!res.ok) throw new Error("Failed to list documents");
+    return res.json();
+  },
+
+  async uploadDocument(workspaceId: string, file: File): Promise<Document> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${API_URL}/workspaces/${workspaceId}/documents/`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) throw new Error("Failed to upload document");
+    return res.json();
+  },
+
+  async deleteDocument(workspaceId: string, documentId: string): Promise<void> {
+    const res = await fetch(
+      `${API_URL}/workspaces/${workspaceId}/documents/${documentId}`,
+      { method: "DELETE" }
+    );
+    if (!res.ok) throw new Error("Failed to delete document");
   },
 };

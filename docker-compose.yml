@@ -41,6 +41,12 @@ services:
       - ~/.ollama:/root/.ollama
     ports:
       - "11434:11434"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   # ──────────────────────────────────────────
   # Applications
@@ -59,11 +65,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      ollama:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
       interval: 15s
       timeout: 5s
       retries: 3
+      start_period: 20s
 
   web:
     build:
@@ -73,7 +82,7 @@ services:
     ports:
       - "3100:3100"
     environment:
-      - NEXT_PUBLIC_API_URL=http://api:8100
+      - API_INTERNAL_URL=http://api:8100
     depends_on:
       api:
         condition: service_healthy

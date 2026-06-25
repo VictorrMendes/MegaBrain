@@ -2,12 +2,15 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8100",
-  },
   async redirects() {
     return [
       { source: "/", destination: "/chat", permanent: false },
+    ];
+  },
+  async rewrites() {
+    const apiUrl = process.env.API_INTERNAL_URL ?? "http://localhost:8100";
+    return [
+      { source: "/api/:path*", destination: `${apiUrl}/:path*` },
     ];
   },
 };

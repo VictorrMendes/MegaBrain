@@ -123,7 +123,7 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
         )
 
     async def embed_batch(self, texts: list[str]) -> list[EmbedResult]:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=300.0) as client:
             resp = await client.post(
                 f"{self.base_url}/api/embed",
                 json={"model": self.embed_model, "input": texts},

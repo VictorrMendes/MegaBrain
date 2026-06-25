@@ -1,8 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PlusIcon, MessageSquareIcon, LoaderIcon } from "lucide-react";
-import { api, type Conversation, type Workspace } from "@/lib/api";
+import {
+  PlusIcon,
+  MessageSquareIcon,
+  LoaderIcon,
+  PaperclipIcon,
+  FileTextIcon,
+  Trash2Icon,
+} from "lucide-react";
+import { api, type Conversation, type Document, type Workspace } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
@@ -19,9 +26,11 @@ export function ChatPage() {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageData[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const streamingIdRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Bootstrap: ensure workspace exists
   useEffect(() => {
     async function init() {
       try {
@@ -33,8 +42,12 @@ export function ChatPage() {
         const workspace = workspaces[0];
         setAppState({ status: "ready", workspace });
 
-        const convs = await api.listConversations(workspace.id);
+        const [convs, docs] = await Promise.all([
+          api.listConversations(workspace.id),
+          api.listDocuments(workspace.id),
+        ]);
         setConversations(convs);
+        setDocuments(docs);
 
         if (convs.length > 0) {
           await loadConversation(workspace.id, convs[0].id);
@@ -72,13 +85,35 @@ export function ChatPage() {
     setMessages([]);
   }
 
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (appState.status !== "ready") return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+      const doc = await api.uploadDocument(appState.workspace.id, file);
+      setDocuments((prev) => [doc, ...prev]);
+    } catch (err) {
+      console.error("Upload failed:", err);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleDeleteDocument(docId: string) {
+    if (appState.status !== "ready") return;
+    await api.deleteDocument(appState.workspace.id, docId);
+    setDocuments((prev) => prev.filter((d) => d.id !== docId));
+  }
+
   const handleSend = useCallback(
     async (content: string) => {
       if (appState.status !== "ready" || isStreaming) return;
 
       let conversationId = activeConversationId;
 
-      // Auto-create conversation on first message
       if (!conversationId) {
         const title = content.slice(0, 40) + (content.length > 40 ? "…" : "");
         const conv = await api.createConversation(appState.workspace.id, title);
@@ -152,7 +187,9 @@ export function ChatPage() {
       <div className="flex h-screen items-center justify-center">
         <div className="text-center space-y-2">
           <p className="text-sm text-red-400">{appState.message}</p>
-          <p className="text-xs text-neutral-600">Verifique se a API está rodando em localhost:8100</p>
+          <p className="text-xs text-neutral-600">
+            Verifique se a API está rodando em localhost:8100
+          </p>
         </div>
       </div>
     );
@@ -175,7 +212,8 @@ export function ChatPage() {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto py-2">
+        {/* Conversations */}
+        <nav className="flex-1 overflow-y-auto py-2 min-h-0">
           {conversations.length === 0 ? (
             <p className="px-4 py-3 text-xs text-neutral-600">Nenhuma conversa</p>
           ) : (
@@ -196,11 +234,66 @@ export function ChatPage() {
             ))
           )}
         </nav>
+
+        {/* Documents */}
+        <div className="border-t border-neutral-800 flex flex-col max-h-48">
+          <div className="flex items-center justify-between px-4 py-2">
+            <span className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">
+              Documentos
+            </span>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100 transition-colors disabled:opacity-40"
+              title="Adicionar documento"
+            >
+              {isUploading ? (
+                <LoaderIcon size={13} className="animate-spin" />
+              ) : (
+                <PaperclipIcon size={13} />
+              )}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt,.md,text/plain,text/markdown"
+              className="hidden"
+              onChange={handleUpload}
+            />
+          </div>
+
+          <div className="overflow-y-auto pb-2">
+            {documents.length === 0 ? (
+              <p className="px-4 pb-2 text-xs text-neutral-600">Nenhum documento</p>
+            ) : (
+              documents.map((doc) => (
+                <div
+                  key={doc.id}
+                  className="group flex items-center gap-2 px-4 py-1.5 text-xs text-neutral-400"
+                >
+                  {doc.status === "ready" ? (
+                    <FileTextIcon size={12} className="shrink-0 text-emerald-500" />
+                  ) : doc.status === "failed" ? (
+                    <FileTextIcon size={12} className="shrink-0 text-red-500" />
+                  ) : (
+                    <LoaderIcon size={12} className="shrink-0 animate-spin" />
+                  )}
+                  <span className="truncate flex-1">{doc.filename}</span>
+                  <button
+                    onClick={() => handleDeleteDocument(doc.id)}
+                    className="hidden group-hover:flex h-5 w-5 items-center justify-center rounded text-neutral-600 hover:text-red-400 transition-colors"
+                  >
+                    <Trash2Icon size={11} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </aside>
 
       {/* Main */}
       <main className="flex flex-1 flex-col overflow-hidden">
-        {/* Header */}
         <header className="flex h-12 items-center border-b border-neutral-800 px-6 shrink-0">
           <span className="text-sm text-neutral-400">
             {conversations.find((c) => c.id === activeConversationId)?.title ?? "Nova conversa"}

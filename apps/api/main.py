@@ -10,6 +10,7 @@ from core.health import router as health_router
 from routers.workspaces import router as workspaces_router
 from routers.memories import router as memories_router
 from routers.conversations import router as conversations_router
+from routers.documents import router as documents_router
 
 logger = get_logger("khonshu.api")
 
@@ -43,3 +44,4 @@ app.include_router(health_router)
 app.include_router(workspaces_router)
 app.include_router(memories_router)
 app.include_router(conversations_router)
+app.include_router(documents_router)
