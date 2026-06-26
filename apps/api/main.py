@@ -6,13 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import kernel.plugins  # noqa: F401 — registers all plugins on import
 from core.database import AsyncSessionLocal
-from core.dependencies import (
-    get_inbox_engine,
-    get_llm_provider,
-    get_memory_engine,
-    get_plugin_engine,
-    get_scheduler_engine,
-)
 from core.health import router as health_router
 from kernel.agents import (
     MemoryExtractorWorker,
@@ -22,6 +15,7 @@ from kernel.agents import (
 from kernel.config import settings
 from kernel.events import event_bus
 from kernel.logger import get_logger, setup_logging
+from kernel.runtime import runtime
 from routers.conversations import router as conversations_router
 from routers.documents import router as documents_router
 from routers.inbox import router as inbox_router
@@ -41,18 +35,21 @@ async def lifespan(app: FastAPI):
     logger.info("api.starting", env=settings.env)
     await event_bus.connect()
 
+    runtime.start()
+    app.state.runtime = runtime
+
     memory_worker = MemoryExtractorWorker(
-        memory_engine=get_memory_engine(),
-        llm_provider=get_llm_provider(),
+        memory_engine=runtime.memory,
+        llm_provider=runtime.llm,
     )
     task_worker = TaskExtractorWorker(
-        memory_engine=get_memory_engine(),
-        llm_provider=get_llm_provider(),
-        plugin_engine=get_plugin_engine(),
+        memory_engine=runtime.memory,
+        llm_provider=runtime.llm,
+        plugin_engine=runtime.plugin,
     )
     summarizer_worker = SummarizerWorker(
-        memory_engine=get_memory_engine(),
-        llm_provider=get_llm_provider(),
+        memory_engine=runtime.memory,
+        llm_provider=runtime.llm,
         session_factory=AsyncSessionLocal,
     )
 
@@ -60,11 +57,8 @@ async def lifespan(app: FastAPI):
     event_bus.subscribe("khonshu.messages", task_worker)
     event_bus.subscribe("khonshu.messages", summarizer_worker)
 
-    # Inicializa InboxEngine antecipadamente (cria singletons)
-    get_inbox_engine()
-
     # Inicia o tick loop do Scheduler em background
-    scheduler = get_scheduler_engine()
+    scheduler = runtime.scheduler
 
     async def _scheduler_tick_loop() -> None:
         while True:
