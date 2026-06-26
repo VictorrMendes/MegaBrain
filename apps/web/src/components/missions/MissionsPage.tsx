@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   type Mission,
@@ -759,8 +759,6 @@ export function MissionsPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [filterTab,     setFilterTab]     = useState<FilterTab>("all");
   const [createOpen,    setCreateOpen]    = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   useEffect(() => {
     if (!workspace) return;
     setLoading(true);
@@ -769,23 +767,26 @@ export function MissionsPage() {
       .finally(() => setLoading(false));
   }, [workspace?.id]);
 
-  // Poll active mission
+  // Stream active mission via SSE — replaces polling
   useEffect(() => {
-    if (pollRef.current) clearInterval(pollRef.current);
     if (!selected || !workspace) return;
     if (!ACTIVE.has(selected.status)) return;
 
-    pollRef.current = setInterval(async () => {
-      const detail = await api.getMission(workspace.id, selected.id);
+    const es = new EventSource(
+      `/api/workspaces/${workspace.id}/missions/${selected.id}/stream`,
+    );
+
+    es.onmessage = (e) => {
+      const detail = JSON.parse(e.data) as MissionDetail;
       setSelected(detail);
       setMissions((prev) => prev.map((m) => (m.id === detail.id ? detail : m)));
-      if (!ACTIVE.has(detail.status)) {
-        clearInterval(pollRef.current!);
-        pollRef.current = null;
-      }
-    }, 3000);
+    };
 
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    es.addEventListener("done",    () => es.close());
+    es.addEventListener("timeout", () => es.close());
+    es.onerror = () => es.close();
+
+    return () => es.close();
   }, [selected?.id, selected?.status, workspace?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function selectMission(id: string) {

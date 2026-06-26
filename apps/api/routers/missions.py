@@ -1,6 +1,8 @@
+import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from core.dependencies import get_mission_engine
 from engines.mission import InvalidTransitionError, MissionEngine, MissionError
@@ -57,6 +59,61 @@ async def get_mission(
         return await engine.get(mission_id)
     except MissionError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+_TERMINAL = {
+    MissionStatus.SUCCEEDED,
+    MissionStatus.FAILED,
+    MissionStatus.CANCELLED,
+    MissionStatus.REJECTED,
+}
+
+
+@router.get("/{mission_id}/stream")
+async def stream_mission(
+    workspace_id: UUID,
+    mission_id: UUID,
+    engine: MissionEngine = Depends(get_mission_engine),
+):
+    """SSE stream of mission detail updates. Closes when mission reaches a terminal state."""
+
+    async def _generator():
+        last_hash: str | None = None
+        for _ in range(1200):  # max 10 minutes
+            try:
+                detail = await engine.get(mission_id)
+            except MissionError:
+                yield "event: error\ndata: not_found\n\n"
+                return
+
+            # Simple change hash based on status + step states
+            step_states = ",".join(
+                f"{s.id}:{s.status.value if hasattr(s.status, 'value') else s.status}"
+                for s in (detail.steps or [])
+            )
+            current_hash = f"{detail.status}|{step_states}"
+
+            if current_hash != last_hash:
+                last_hash = current_hash
+                yield f"data: {detail.model_dump_json()}\n\n"
+
+            if detail.status in _TERMINAL:
+                yield "event: done\ndata: terminal\n\n"
+                return
+
+            await asyncio.sleep(0.5)
+
+        yield "event: timeout\ndata: max_duration_exceeded\n\n"
+
+    return StreamingResponse(
+        _generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection":    "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/{mission_id}/plan", response_model=MissionResponse)
