@@ -4,10 +4,20 @@ import { useEffect, useState } from "react";
 import { api, type MissionArtifact, type Mission } from "@/lib/api";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { cn } from "@/lib/cn";
+import { Badge, Spinner } from "@/components/ui";
 import {
-  PackageIcon, LoaderIcon, FileIcon, ImageIcon, FileTextIcon, CodeIcon,
+  CodeIcon,
+  ExternalLinkIcon,
+  FileIcon,
+  FileTextIcon,
   FilterIcon,
+  ImageIcon,
+  PackageIcon,
 } from "lucide-react";
+
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
 
 function formatDate(s: string) {
   return new Date(s).toLocaleString("pt-BR", {
@@ -17,20 +27,26 @@ function formatDate(s: string) {
 }
 
 function ArtifactIcon({ mime }: { mime: string }) {
-  if (mime.startsWith("image/")) return <ImageIcon size={14} className="text-violet-400 shrink-0" />;
-  if (mime.startsWith("text/")) return <FileTextIcon size={14} className="text-blue-400 shrink-0" />;
+  if (mime.startsWith("image/"))
+    return <ImageIcon    size={14} className="shrink-0 text-status-active" />;
+  if (mime.startsWith("text/"))
+    return <FileTextIcon size={14} className="shrink-0 text-status-info" />;
   if (mime.includes("json") || mime.includes("javascript") || mime.includes("python"))
-    return <CodeIcon size={14} className="text-yellow-400 shrink-0" />;
-  return <FileIcon size={14} className="text-neutral-400 shrink-0" />;
+    return <CodeIcon     size={14} className="shrink-0 text-status-warning" />;
+  return   <FileIcon     size={14} className="shrink-0 text-content-muted" />;
 }
+
+// ─────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────
 
 export function ArtifactsPage() {
   const { current: workspace, loading: wsLoading } = useWorkspace();
-  const [artifacts, setArtifacts] = useState<MissionArtifact[]>([]);
-  const [missions, setMissions] = useState<Mission[]>([]);
-  const [selectedMission, setSelectedMission] = useState<string | "">("");
-  const [loading, setLoading] = useState(false);
-  const [filtering, setFiltering] = useState(false);
+  const [artifacts,       setArtifacts]       = useState<MissionArtifact[]>([]);
+  const [missions,        setMissions]        = useState<Mission[]>([]);
+  const [selectedMission, setSelectedMission] = useState<string>("");
+  const [loading,         setLoading]         = useState(false);
+  const [filtering,       setFiltering]       = useState(false);
 
   useEffect(() => {
     if (!workspace) return;
@@ -60,78 +76,122 @@ export function ArtifactsPage() {
   if (wsLoading || loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoaderIcon size={20} className="animate-spin text-neutral-500" />
+        <Spinner size="md" />
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="mx-auto max-w-3xl">
-        {/* Header */}
-        <div className="mb-4 flex items-center gap-2 flex-wrap">
-          <PackageIcon size={15} className="text-neutral-400" />
-          <h1 className="text-sm font-semibold text-neutral-300">Artifacts</h1>
-          <span className="ml-auto text-xs text-neutral-600">{artifacts.length} arquivos</span>
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-3xl px-6 py-8">
+
+        {/* ── Header ── */}
+        <div className="mb-6 flex items-center gap-2">
+          <PackageIcon size={14} className="text-content-muted" />
+          <h1 className="text-md font-semibold text-content-primary">Artifacts</h1>
+          <span className="ml-auto text-xs text-content-muted">
+            {artifacts.length} arquivo{artifacts.length !== 1 ? "s" : ""}
+          </span>
         </div>
 
-        {/* Mission filter */}
+        {/* ── Mission filter ── */}
         {missions.length > 0 && (
-          <div className="mb-5 flex items-center gap-2">
-            <FilterIcon size={12} className="text-neutral-600 shrink-0" />
-            <select
-              value={selectedMission}
-              onChange={(e) => filterByMission(e.target.value)}
-              className="flex-1 max-w-xs rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-300 focus:outline-none focus:border-neutral-700"
-            >
-              <option value="">Todas as missões</option>
-              {missions.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.intent.slice(0, 60)}
-                </option>
-              ))}
-            </select>
-            {filtering && <LoaderIcon size={13} className="animate-spin text-neutral-500" />}
+          <div className="mb-6 flex items-center gap-2">
+            <FilterIcon size={12} className="shrink-0 text-content-muted" />
+            <div className="relative flex-1 max-w-sm">
+              <select
+                value={selectedMission}
+                onChange={(e) => filterByMission(e.target.value)}
+                className={cn(
+                  "w-full appearance-none rounded-lg border py-2 pl-3 pr-8 text-sm",
+                  "border-[var(--border-default)] bg-[var(--surface-raised)]",
+                  "text-content-primary focus:outline-none focus:border-[var(--border-accent)]",
+                  "transition-colors cursor-pointer",
+                )}
+              >
+                <option value="">Todas as missões</option>
+                {missions.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.intent.slice(0, 60)}
+                  </option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-content-muted">
+                ▾
+              </span>
+            </div>
+            {filtering && <Spinner size="sm" />}
           </div>
         )}
 
-        {/* Artifacts */}
+        {/* ── Artifacts ── */}
         {artifacts.length === 0 ? (
-          <p className="text-center text-xs text-neutral-600 py-10">
-            {selectedMission ? "Nenhum artifact para esta missão." : "Nenhum artifact gerado ainda."}
+          <p className="py-16 text-center text-sm text-content-muted">
+            {selectedMission
+              ? "Nenhum artifact para esta missão."
+              : "Nenhum artifact gerado ainda."}
           </p>
         ) : (
-          Object.entries(groupedByType).map(([type, items]) => (
-            <div key={type} className="mb-6">
-              <h2 className="mb-2 text-xs font-semibold uppercase tracking-widest text-neutral-500">
-                {type} ({items.length})
-              </h2>
-              <div className="space-y-2">
-                {items.map((a) => (
-                  <div key={a.id} className="flex items-center gap-3 rounded-lg border border-neutral-800 p-3">
-                    <ArtifactIcon mime={a.mime} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-neutral-200 truncate">{a.name}</p>
-                      <p className="mt-0.5 text-[10px] text-neutral-600">{a.mime}</p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-[10px] text-neutral-600">{formatDate(a.created_at)}</p>
-                      {a.uri && (
-                        <a
-                          href={a.uri}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mt-0.5 text-[10px] text-blue-500 hover:text-blue-400"
-                        >
-                          abrir
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                ))}
+          <div className="space-y-8 animate-fade-in">
+            {Object.entries(groupedByType).map(([type, items]) => (
+              <div key={type}>
+                <div className="mb-3 flex items-center gap-3">
+                  <h2 className="text-[11px] font-semibold uppercase tracking-widest text-content-muted">
+                    {type}
+                  </h2>
+                  <Badge variant="default" size="sm">{items.length}</Badge>
+                  <div className="flex-1 h-px bg-[var(--border-subtle)]" />
+                </div>
+
+                <div className="space-y-1.5">
+                  {items.map((a) => (
+                    <ArtifactRow key={a.id} artifact={a} />
+                  ))}
+                </div>
               </div>
-            </div>
-          ))
+            ))}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Sub-component
+// ─────────────────────────────────────────────────────────────
+
+function ArtifactRow({ artifact: a }: { artifact: MissionArtifact }) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 rounded-lg border border-[var(--border-subtle)]",
+        "bg-[var(--surface-raised)] px-4 py-3",
+        "transition-colors hover:border-[var(--border-default)]",
+      )}
+    >
+      <ArtifactIcon mime={a.mime} />
+
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-content-primary truncate">{a.name}</p>
+        <p className="mt-0.5 text-[11px] font-mono text-content-muted">{a.mime}</p>
+      </div>
+
+      <div className="shrink-0 flex items-center gap-3">
+        <span className="text-[11px] text-content-muted tabular-nums">
+          {formatDate(a.created_at)}
+        </span>
+        {a.uri && (
+          <a
+            href={a.uri}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors"
+          >
+            <ExternalLinkIcon size={12} />
+            abrir
+          </a>
         )}
       </div>
     </div>

@@ -5,22 +5,26 @@ import { useRouter } from "next/navigation";
 import { api, type SearchResult } from "@/lib/api";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { cn } from "@/lib/cn";
+import { Spinner } from "@/components/ui";
 import {
-  SearchIcon,
-  LoaderIcon,
-  TargetIcon,
-  BrainIcon,
   BookOpenIcon,
-  PackageIcon,
+  BrainIcon,
   LightbulbIcon,
+  PackageIcon,
+  SearchIcon,
+  TargetIcon,
 } from "lucide-react";
 
+// ─────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────
+
 const TYPE_ICON: Record<string, React.ReactNode> = {
-  mission:     <TargetIcon size={13} className="text-violet-400" />,
-  memory:      <BrainIcon size={13} className="text-emerald-400" />,
-  fact:        <BookOpenIcon size={13} className="text-blue-400" />,
-  observation: <LightbulbIcon size={13} className="text-yellow-400" />,
-  artifact:    <PackageIcon size={13} className="text-orange-400" />,
+  mission:     <TargetIcon    size={13} className="text-status-active" />,
+  memory:      <BrainIcon     size={13} className="text-status-success" />,
+  fact:        <BookOpenIcon  size={13} className="text-status-info" />,
+  observation: <LightbulbIcon size={13} className="text-status-warning" />,
+  artifact:    <PackageIcon   size={13} className="text-content-secondary" />,
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -31,19 +35,30 @@ const TYPE_LABEL: Record<string, string> = {
   artifact:    "artifact",
 };
 
+const QUICK_NAV = [
+  { label: "Missões",      href: "/missions",  icon: <TargetIcon    size={11} /> },
+  { label: "Memória",      href: "/memory",    icon: <BrainIcon     size={11} /> },
+  { label: "Conhecimento", href: "/knowledge", icon: <BookOpenIcon  size={11} /> },
+  { label: "Artifacts",    href: "/artifacts", icon: <PackageIcon   size={11} /> },
+];
+
+// ─────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────
+
 interface Props {
-  open: boolean;
+  open:    boolean;
   onClose: () => void;
 }
 
 export function CommandPalette({ open, onClose }: Props) {
-  const router = useRouter();
+  const router    = useRouter();
   const { current: workspace } = useWorkspace();
-  const [query, setQuery] = useState("");
+  const [query,   setQuery]   = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const [cursor, setCursor] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [cursor,  setCursor]  = useState(0);
+  const inputRef   = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -70,9 +85,7 @@ export function CommandPalette({ open, onClose }: Props) {
       }
     }, 280);
 
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query, workspace?.id]);
 
   function navigate(href: string) {
@@ -105,15 +118,20 @@ export function CommandPalette({ open, onClose }: Props) {
 
       {/* Panel */}
       <div
-        className="relative w-full max-w-xl rounded-xl border border-neutral-700 bg-neutral-900 shadow-2xl"
+        className={cn(
+          "relative w-full max-w-xl rounded-xl shadow-2xl",
+          "border border-[var(--border-default)]",
+          "bg-[var(--surface-overlay)]",
+          "animate-fade-in",
+        )}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
       >
-        {/* Input */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-neutral-800">
+        {/* ── Input ── */}
+        <div className="flex items-center gap-3 border-b border-[var(--border-subtle)] px-4 py-3">
           {loading
-            ? <LoaderIcon size={15} className="shrink-0 animate-spin text-neutral-500" />
-            : <SearchIcon size={15} className="shrink-0 text-neutral-500" />
+            ? <Spinner size="sm" />
+            : <SearchIcon size={15} className="shrink-0 text-content-muted" />
           }
           <input
             ref={inputRef}
@@ -121,14 +139,18 @@ export function CommandPalette({ open, onClose }: Props) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar missões, memórias, conhecimento, artifacts…"
-            className="flex-1 bg-transparent text-sm text-neutral-200 placeholder:text-neutral-600 focus:outline-none"
+            className={cn(
+              "flex-1 bg-transparent text-sm",
+              "text-content-primary placeholder:text-content-placeholder",
+              "focus:outline-none",
+            )}
           />
-          <kbd className="rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-600">
+          <kbd className="rounded border border-[var(--border-default)] px-1.5 py-0.5 text-[10px] text-content-muted">
             ESC
           </kbd>
         </div>
 
-        {/* Results */}
+        {/* ── Results ── */}
         {results.length > 0 && (
           <ul className="max-h-96 overflow-y-auto py-1">
             {results.map((r, i) => (
@@ -138,15 +160,31 @@ export function CommandPalette({ open, onClose }: Props) {
                   onMouseEnter={() => setCursor(i)}
                   className={cn(
                     "flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors",
-                    cursor === i ? "bg-neutral-800" : "hover:bg-neutral-800/60"
+                    cursor === i
+                      ? "bg-[var(--accent-dim)]"
+                      : "hover:bg-[var(--surface-subtle)]",
                   )}
                 >
-                  <span className="mt-0.5 shrink-0">{TYPE_ICON[r.type] ?? <SearchIcon size={13} />}</span>
+                  <span className="mt-0.5 shrink-0">
+                    {TYPE_ICON[r.type] ?? <SearchIcon size={13} className="text-content-muted" />}
+                  </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-neutral-200 truncate">{r.title}</p>
-                    <p className="text-xs text-neutral-500 truncate">{r.excerpt}</p>
+                    <p
+                      className={cn(
+                        "truncate text-sm",
+                        cursor === i ? "text-content-primary" : "text-content-secondary",
+                      )}
+                    >
+                      {r.title}
+                    </p>
+                    <p className="truncate text-xs text-content-muted">{r.excerpt}</p>
                   </div>
-                  <span className="shrink-0 text-[10px] text-neutral-600 mt-0.5">
+                  <span
+                    className={cn(
+                      "mt-0.5 shrink-0 text-[10px]",
+                      cursor === i ? "text-accent" : "text-content-muted",
+                    )}
+                  >
                     {TYPE_LABEL[r.type] ?? r.type}
                   </span>
                 </button>
@@ -155,37 +193,41 @@ export function CommandPalette({ open, onClose }: Props) {
           </ul>
         )}
 
+        {/* ── Empty state ── */}
         {query.trim() && !loading && results.length === 0 && (
-          <p className="px-4 py-6 text-center text-xs text-neutral-600">
+          <p className="px-4 py-8 text-center text-sm text-content-muted">
             Nenhum resultado para "{query}"
           </p>
         )}
 
+        {/* ── Quick nav ── */}
         {!query.trim() && (
           <div className="flex flex-wrap gap-2 px-4 py-3">
-            {[
-              { label: "Missões", href: "/missions", icon: <TargetIcon size={11} /> },
-              { label: "Memória", href: "/memory", icon: <BrainIcon size={11} /> },
-              { label: "Conhecimento", href: "/knowledge", icon: <BookOpenIcon size={11} /> },
-              { label: "Artifacts", href: "/artifacts", icon: <PackageIcon size={11} /> },
-            ].map((item) => (
+            {QUICK_NAV.map((item) => (
               <button
                 key={item.href}
                 onClick={() => navigate(item.href)}
-                className="flex items-center gap-1.5 rounded-md bg-neutral-800 px-2.5 py-1.5 text-xs text-neutral-400 hover:text-neutral-200 transition-colors"
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs",
+                  "border-[var(--border-subtle)] bg-[var(--surface-subtle)]",
+                  "text-content-secondary hover:border-[var(--border-default)] hover:text-content-primary",
+                  "transition-colors",
+                )}
               >
-                {item.icon}
+                <span className="text-content-muted">{item.icon}</span>
                 {item.label}
               </button>
             ))}
           </div>
         )}
 
-        {/* Footer hint */}
-        <div className="flex items-center justify-between border-t border-neutral-800 px-4 py-2">
-          <span className="text-[10px] text-neutral-700">↑↓ navegar · Enter abrir · Esc fechar</span>
+        {/* ── Footer ── */}
+        <div className="flex items-center justify-between border-t border-[var(--border-subtle)] px-4 py-2">
+          <span className="text-[10px] text-content-muted">
+            ↑↓ navegar · Enter abrir · Esc fechar
+          </span>
           {workspace && (
-            <span className="text-[10px] text-neutral-700">{workspace.name}</span>
+            <span className="text-[10px] text-content-muted">{workspace.name}</span>
           )}
         </div>
       </div>
