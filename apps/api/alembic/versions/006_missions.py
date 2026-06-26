@@ -17,41 +17,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Enums — guarded against duplicate_object from partial prior runs
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE mission_status AS ENUM (
-                'pending', 'planning', 'waiting_approval', 'ready',
-                'running', 'paused', 'retrying', 'succeeded', 'failed', 'cancelled'
-            );
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$
-    """)
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE mission_trigger AS ENUM (
-                'manual', 'scheduled', 'event', 'rule'
-            );
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$
-    """)
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE step_type AS ENUM (
-                'tool', 'workflow', 'agent', 'human'
-            );
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$
-    """)
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE step_status AS ENUM (
-                'pending', 'running', 'succeeded', 'failed', 'skipped'
-            );
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$
-    """)
-
     # missions
     op.create_table(
         "missions",
@@ -65,7 +30,6 @@ def upgrade() -> None:
                 "running", "paused", "retrying", "succeeded",
                 "failed", "cancelled",
                 name="mission_status",
-                create_type=False,
             ),
             nullable=False,
             server_default="pending",
@@ -77,7 +41,6 @@ def upgrade() -> None:
             sa.Enum(
                 "manual", "scheduled", "event", "rule",
                 name="mission_trigger",
-                create_type=False,
             ),
             nullable=False,
             server_default="manual",
@@ -123,7 +86,6 @@ def upgrade() -> None:
             sa.Enum(
                 "tool", "workflow", "agent", "human",
                 name="step_type",
-                create_type=False,
             ),
             nullable=False,
             server_default="tool",
@@ -136,7 +98,6 @@ def upgrade() -> None:
             sa.Enum(
                 "pending", "running", "succeeded", "failed", "skipped",
                 name="step_status",
-                create_type=False,
             ),
             nullable=False,
             server_default="pending",

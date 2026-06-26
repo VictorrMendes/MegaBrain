@@ -21,16 +21,6 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE execution_plan_status AS ENUM (
-                'draft', 'validated', 'approved', 'running',
-                'completed', 'failed', 'superseded'
-            );
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$
-    """)
-
     op.create_table(
         "execution_plans",
         sa.Column("id", sa.UUID(), nullable=False),
@@ -43,7 +33,6 @@ def upgrade() -> None:
                 "draft", "validated", "approved", "running",
                 "completed", "failed", "superseded",
                 name="execution_plan_status",
-                create_type=False,
             ),
             nullable=False,
             server_default="draft",

@@ -18,19 +18,6 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute("""
-        CREATE TYPE inbox_item_type AS ENUM (
-            'text', 'file', 'url', 'email', 'note', 'event'
-        )
-    """)
-    op.execute("""
-        CREATE TYPE inbox_item_status AS ENUM (
-            'pending', 'processing',
-            'routed_knowledge', 'routed_task', 'routed_both',
-            'dismissed'
-        )
-    """)
-
     op.create_table(
         "inbox_items",
         sa.Column("id", sa.UUID(), nullable=False),
@@ -40,7 +27,6 @@ def upgrade() -> None:
             sa.Enum(
                 "text", "file", "url", "email", "note", "event",
                 name="inbox_item_type",
-                create_type=False,
             ),
             nullable=False,
         ),
@@ -51,7 +37,6 @@ def upgrade() -> None:
                 "routed_knowledge", "routed_task", "routed_both",
                 "dismissed",
                 name="inbox_item_status",
-                create_type=False,
             ),
             nullable=False,
             server_default="pending",

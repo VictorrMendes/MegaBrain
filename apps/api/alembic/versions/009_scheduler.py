@@ -18,23 +18,6 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE trigger_type AS ENUM (
-                'temporal', 'event', 'rule'
-            );
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$
-    """)
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE trigger_status AS ENUM (
-                'active', 'paused', 'disabled'
-            );
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$
-    """)
-
     op.create_table(
         "scheduler_triggers",
         sa.Column("id", sa.UUID(), nullable=False),
@@ -46,7 +29,6 @@ def upgrade() -> None:
             sa.Enum(
                 "temporal", "event", "rule",
                 name="trigger_type",
-                create_type=False,
             ),
             nullable=False,
         ),
@@ -55,7 +37,6 @@ def upgrade() -> None:
             sa.Enum(
                 "active", "paused", "disabled",
                 name="trigger_status",
-                create_type=False,
             ),
             nullable=False,
             server_default="active",

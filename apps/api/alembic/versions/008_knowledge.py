@@ -18,16 +18,6 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE entity_type AS ENUM (
-                'person', 'service', 'device', 'concept',
-                'place', 'organization', 'document', 'other'
-            );
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$
-    """)
-
     # knowledge_entities
     op.create_table(
         "knowledge_entities",
@@ -40,7 +30,6 @@ def upgrade() -> None:
                 "person", "service", "device", "concept",
                 "place", "organization", "document", "other",
                 name="entity_type",
-                create_type=False,
             ),
             nullable=False,
             server_default="other",
