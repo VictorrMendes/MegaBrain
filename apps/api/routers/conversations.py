@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from uuid import UUID
 
@@ -7,8 +9,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
-from core.dependencies import get_llm_provider, get_prompt_engine
-from engines.prompt import PromptEngine
+from core.dependencies import get_context_builder, get_llm_provider
+from kernel.context import ContextBuilder
 from kernel.events import event_bus
 from kernel.providers.base import ChatMessage, LLMProvider
 from models.conversation import Conversation, Message, MessageRole
@@ -24,6 +26,17 @@ router = APIRouter(
     prefix="/workspaces/{workspace_id}/conversations",
     tags=["conversations"],
 )
+
+
+# ── SSE helper ──────────────────────────────────────────────────────────────
+
+
+def _sse(event: str, **data) -> str:
+    """Format a Server-Sent Event with a typed event field."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+# ── CRUD ────────────────────────────────────────────────────────────────────
 
 
 @router.post("", response_model=ConversationResponse, status_code=201)
@@ -80,13 +93,13 @@ async def send_message(
     data: MessageCreate,
     db: AsyncSession = Depends(get_db),
     llm: LLMProvider = Depends(get_llm_provider),
-    prompt_engine: PromptEngine = Depends(get_prompt_engine),
+    ctx_builder: ContextBuilder = Depends(get_context_builder),
 ):
     conv = await db.get(Conversation, conversation_id)
     if conv is None or conv.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    system_prompt = await prompt_engine.build_system_prompt(
+    built = await ctx_builder.build(
         workspace_id=workspace_id,
         user_message=data.content,
     )
@@ -99,7 +112,7 @@ async def send_message(
     )
     history = list(history_result.scalars())
 
-    messages = [ChatMessage(role="system", content=system_prompt)]
+    messages = [ChatMessage(role="system", content=built.system_prompt)]
     for msg in history:
         messages.append(ChatMessage(role=msg.role.value, content=msg.content))
     messages.append(ChatMessage(role="user", content=data.content))
@@ -135,38 +148,70 @@ async def send_message_stream(
     data: MessageCreate,
     db: AsyncSession = Depends(get_db),
     llm: LLMProvider = Depends(get_llm_provider),
-    prompt_engine: PromptEngine = Depends(get_prompt_engine),
+    ctx_builder: ContextBuilder = Depends(get_context_builder),
 ):
+    """Streaming conversation endpoint with typed SSE events.
+
+    Event sequence:
+        thinking          — pipeline started
+        reading_memory    — memory + knowledge retrieval done (count fields)
+        text              — LLM text chunk (content field)
+        done              — response complete, messages persisted
+        error             — unrecoverable failure (message field)
+    """
     conv = await db.get(Conversation, conversation_id)
     if conv is None or conv.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    system_prompt = await prompt_engine.build_system_prompt(
-        workspace_id=workspace_id,
-        user_message=data.content,
-    )
-
-    history_result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conversation_id)
-        .order_by(Message.created_at)
-        .limit(20)
-    )
-    history = list(history_result.scalars())
-
-    messages = [ChatMessage(role="system", content=system_prompt)]
-    for msg in history:
-        messages.append(ChatMessage(role=msg.role.value, content=msg.content))
-    messages.append(ChatMessage(role="user", content=data.content))
-
-    full_response: list[str] = []
-
     async def event_stream():
-        async for chunk in llm.chat_stream(messages):
-            full_response.append(chunk)
-            yield f"data: {json.dumps({'content': chunk})}\n\n"
+        yield _sse("thinking")
+
+        # ── Build context ────────────────────────────────────────────────
+        try:
+            built = await ctx_builder.build(
+                workspace_id=workspace_id,
+                user_message=data.content,
+            )
+        except Exception as exc:
+            yield _sse("error", message=str(exc))
+            return
+
+        yield _sse(
+            "reading_memory",
+            memory=built.memory_count,
+            knowledge=built.knowledge_count,
+            chunks=built.chunk_count,
+        )
+
+        # ── Assemble message list ────────────────────────────────────────
+        history_result = await db.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at)
+            .limit(20)
+        )
+        history = list(history_result.scalars())
+
+        messages = [ChatMessage(role="system", content=built.system_prompt)]
+        for msg in history:
+            messages.append(
+                ChatMessage(role=msg.role.value, content=msg.content)
+            )
+        messages.append(ChatMessage(role="user", content=data.content))
+
+        # ── Stream LLM response ──────────────────────────────────────────
+        full_response: list[str] = []
+        try:
+            async for chunk in llm.chat_stream(messages):
+                full_response.append(chunk)
+                yield _sse("text", content=chunk)
+        except Exception as exc:
+            yield _sse("error", message=str(exc))
+            return
 
         response_text = "".join(full_response)
+
+        # ── Persist messages ─────────────────────────────────────────────
         user_msg = Message(
             conversation_id=conversation_id,
             role=MessageRole.user,
@@ -189,6 +234,7 @@ async def send_message_stream(
         )
         msg_count = count_result.scalar_one()
 
+        # ── Publish to workers (memory extractor, summarizer, etc.) ─────
         try:
             await event_bus.publish(
                 "khonshu.messages",
@@ -204,6 +250,8 @@ async def send_message_stream(
         except RuntimeError:
             pass
 
-        yield f"data: {json.dumps({'done': True})}\n\n"
+        yield _sse("done")
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream"
+    )

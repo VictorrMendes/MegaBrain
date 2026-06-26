@@ -5,6 +5,7 @@ export interface ChatMessageData {
   role: "user" | "assistant";
   content: string;
   streaming?: boolean;
+  statusHint?: string;
 }
 
 interface ChatMessageProps {
@@ -24,8 +25,16 @@ export function ChatMessage({ message }: ChatMessageProps) {
             : "bg-neutral-900 border border-neutral-800 text-neutral-200 rounded-bl-sm"
         )}
       >
-        <p className="whitespace-pre-wrap break-words">{message.content}</p>
-        {message.streaming && (
+        {/* Status hint shown while streaming, before text arrives */}
+        {message.streaming && message.statusHint && !message.content && (
+          <p className="text-xs text-neutral-500 italic">{message.statusHint}</p>
+        )}
+
+        {message.content && (
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        )}
+
+        {message.streaming && message.content && (
           <span className="inline-block w-1.5 h-4 bg-neutral-400 ml-0.5 animate-pulse rounded-sm" />
         )}
       </div>

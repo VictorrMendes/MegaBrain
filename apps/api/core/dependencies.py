@@ -7,6 +7,10 @@ A inicialização real acontece em kernel/runtime.py.
 from kernel.runtime import runtime
 
 
+def get_context_builder():
+    return runtime.context
+
+
 def get_llm_provider():
     return runtime.llm
 

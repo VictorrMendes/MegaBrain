@@ -16,13 +16,16 @@ from kernel.config import settings
 from kernel.events import event_bus
 from kernel.logger import get_logger, setup_logging
 from kernel.runtime import runtime
+from routers.artifacts import router as artifacts_router
 from routers.conversations import router as conversations_router
 from routers.documents import router as documents_router
 from routers.inbox import router as inbox_router
+from routers.knowledge import router as knowledge_router
 from routers.memories import router as memories_router
 from routers.missions import router as missions_router
 from routers.obsidian import router as obsidian_router
 from routers.plugins import router as plugins_router
+from routers.runtime import router as runtime_router
 from routers.scheduler import router as scheduler_router
 from routers.workspaces import router as workspaces_router
 
@@ -111,6 +114,7 @@ app.add_middleware(
 )
 
 app.include_router(health_router)
+app.include_router(runtime_router)
 app.include_router(workspaces_router)
 app.include_router(memories_router)
 app.include_router(conversations_router)
@@ -120,3 +124,5 @@ app.include_router(missions_router)
 app.include_router(scheduler_router)
 app.include_router(inbox_router)
 app.include_router(obsidian_router)
+app.include_router(knowledge_router)
+app.include_router(artifacts_router)

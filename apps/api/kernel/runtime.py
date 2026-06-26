@@ -13,6 +13,7 @@ from engines.plugin import PluginEngine
 from engines.prompt import PromptEngine
 from engines.rag import RAGEngine
 from engines.scheduler import SchedulerEngine
+from kernel.context import ContextBuilder
 from kernel.health import ComponentHealth, HealthReport
 from kernel.logger import get_logger
 from kernel.providers.ollama import OllamaProvider
@@ -43,6 +44,7 @@ class KhonshuRuntime:
         self._mission: MissionEngine | None = None
         self._scheduler: SchedulerEngine | None = None
         self._inbox: InboxEngine | None = None
+        self._context: ContextBuilder | None = None
 
     def start(self) -> None:
         """Inicializa todas as engines em ordem de dependência.
@@ -86,6 +88,11 @@ class KhonshuRuntime:
         self._inbox = InboxEngine(
             session_factory=AsyncSessionLocal,
             llm_provider=self._llm,
+        )
+        self._context = ContextBuilder(
+            memory_engine=self._memory,
+            rag_engine=self._rag,
+            knowledge_engine=self._knowledge,
         )
 
         # Registrar subscrições de eventos (ADR-008)
@@ -170,6 +177,11 @@ class KhonshuRuntime:
     def inbox(self) -> InboxEngine:
         assert self._inbox is not None, "Runtime not started"
         return self._inbox
+
+    @property
+    def context(self) -> ContextBuilder:
+        assert self._context is not None, "Runtime not started"
+        return self._context
 
 
 # Global singleton — start() chamado no lifespan de main.py

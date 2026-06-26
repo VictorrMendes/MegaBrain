@@ -17,6 +17,7 @@ import {
   type AvailablePlugin,
   type Conversation,
   type Document,
+  type StreamEvent,
   type Workspace,
   type WorkspacePlugin,
 } from "@/lib/api";
@@ -233,6 +234,7 @@ export function ChatPage() {
         role: "assistant",
         content: "",
         streaming: true,
+        statusHint: "Pensando…",
       };
 
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -242,17 +244,55 @@ export function ChatPage() {
         appState.workspace.id,
         conversationId,
         content,
-        (chunk) => {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === streamingId ? { ...m, content: m.content + chunk } : m
-            )
-          );
+        (evt: StreamEvent) => {
+          if (evt.event === "thinking") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamingId
+                  ? { ...m, statusHint: "Pensando…" }
+                  : m
+              )
+            );
+          } else if (evt.event === "reading_memory") {
+            const hint = [
+              evt.memory > 0 && `${evt.memory} memórias`,
+              evt.knowledge > 0 && `${evt.knowledge} fatos`,
+              evt.chunks > 0 && `${evt.chunks} documentos`,
+            ]
+              .filter(Boolean)
+              .join(", ");
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamingId
+                  ? { ...m, statusHint: hint ? `Lendo ${hint}…` : "Lendo contexto…" }
+                  : m
+              )
+            );
+          } else if (evt.event === "text") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamingId
+                  ? { ...m, content: m.content + evt.content, statusHint: undefined }
+                  : m
+              )
+            );
+          } else if (evt.event === "error") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamingId
+                  ? { ...m, content: `Erro: ${evt.message}`, streaming: false, statusHint: undefined }
+                  : m
+              )
+            );
+            setIsStreaming(false);
+          }
         },
         () => {
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === streamingId ? { ...m, streaming: false } : m
+              m.id === streamingId
+                ? { ...m, streaming: false, statusHint: undefined }
+                : m
             )
           );
           setIsStreaming(false);
@@ -261,7 +301,7 @@ export function ChatPage() {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === streamingId
-                ? { ...m, content: `Erro: ${err.message}`, streaming: false }
+                ? { ...m, content: `Erro: ${err.message}`, streaming: false, statusHint: undefined }
                 : m
             )
           );
@@ -294,7 +334,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-neutral-950 text-neutral-100">
+    <div className="flex h-full overflow-hidden">
       {/* Sidebar */}
       <aside className="flex w-60 shrink-0 flex-col border-r border-neutral-800 bg-neutral-900">
         <div className="flex items-center justify-between px-4 py-4 border-b border-neutral-800">
