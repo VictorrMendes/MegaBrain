@@ -1,12 +1,16 @@
 import httpx
 
-from kernel.plugins.base import Plugin, PluginRegistry, PluginResult
+from kernel.plugins.base import ConfigField, Plugin, PluginRegistry, PluginResult
 
 
 @PluginRegistry.register
 class WeatherPlugin(Plugin):
     name = "weather"
     description = "Consulta previsão do tempo via wttr.in (sem API key)"
+    category = "data"
+    config_fields = [
+        ConfigField("default_location", "Cidade padrão", "text", placeholder="ex: Sao Paulo"),
+    ]
 
     async def execute(self, action: str, params: dict) -> PluginResult:
         location = params.get("location") or self.config.get("default_location", "")

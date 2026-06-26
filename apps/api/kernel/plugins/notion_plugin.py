@@ -1,6 +1,6 @@
 import httpx
 
-from kernel.plugins.base import Plugin, PluginRegistry, PluginResult
+from kernel.plugins.base import ConfigField, Plugin, PluginRegistry, PluginResult
 
 _NOTION_VERSION = "2022-06-28"
 
@@ -18,6 +18,11 @@ def _extract_title(page: dict) -> str:
 class NotionPlugin(Plugin):
     name = "notion"
     description = "Cria e lê páginas no Notion via API oficial"
+    category = "productivity"
+    config_fields = [
+        ConfigField("api_key",     "API Key do Notion",  "password", required=True),
+        ConfigField("database_id", "Database ID",         "text",    placeholder="32 chars hex"),
+    ]
 
     async def execute(self, action: str, params: dict) -> PluginResult:
         token = self.config.get("token", "")

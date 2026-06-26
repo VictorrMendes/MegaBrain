@@ -1,13 +1,18 @@
 import httpx
 
 from kernel.config import settings
-from kernel.plugins.base import Plugin, PluginRegistry, PluginResult
+from kernel.plugins.base import ConfigField, Plugin, PluginRegistry, PluginResult
 
 
 @PluginRegistry.register
 class NtfyPlugin(Plugin):
     name = "ntfy"
     description = "Envia notificações push via ntfy"
+    category = "notifications"
+    config_fields = [
+        ConfigField("url",   "Servidor ntfy",  "url",  placeholder="https://ntfy.sh"),
+        ConfigField("topic", "Tópico",         "text", required=True, placeholder="meu-topico"),
+    ]
 
     async def execute(self, action: str, params: dict) -> PluginResult:
         if action != "notify":

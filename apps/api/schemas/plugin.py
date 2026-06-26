@@ -4,9 +4,19 @@ from uuid import UUID
 from pydantic import BaseModel
 
 
+class ConfigFieldSchema(BaseModel):
+    name: str
+    label: str
+    type: str
+    required: bool = False
+    placeholder: str = ""
+
+
 class AvailablePlugin(BaseModel):
     name: str
     description: str
+    category: str = "general"
+    config_fields: list[ConfigFieldSchema] = []
 
 
 class WorkspacePluginCreate(BaseModel):

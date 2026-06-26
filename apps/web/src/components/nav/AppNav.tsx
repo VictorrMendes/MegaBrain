@@ -13,6 +13,7 @@ import {
   ActivityIcon,
   MonitorIcon,
   PackageIcon,
+  PlugIcon,
   CheckIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -27,7 +28,8 @@ const NAV_ITEMS = [
   { href: "/inbox",     icon: InboxIcon,            label: "Inbox"          },
   { href: "/timeline",  icon: ActivityIcon,         label: "Timeline"       },
   { href: "/artifacts", icon: PackageIcon,          label: "Artifacts"      },
-  { href: "/runtime",   icon: MonitorIcon,          label: "Runtime"        },
+  { href: "/runtime",      icon: MonitorIcon,  label: "Runtime"     },
+  { href: "/integrations", icon: PlugIcon,     label: "Integrações" },
 ];
 
 export function AppNav() {

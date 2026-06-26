@@ -1,12 +1,14 @@
 import httpx
 
-from kernel.plugins.base import Plugin, PluginRegistry, PluginResult
+from kernel.plugins.base import ConfigField, Plugin, PluginRegistry, PluginResult
 
 
 @PluginRegistry.register
 class WebSearchPlugin(Plugin):
     name = "web_search"
     description = "Busca na web via DuckDuckGo (sem API key)"
+    category = "data"
+    config_fields = []
 
     async def execute(self, action: str, params: dict) -> PluginResult:
         query = params.get("query", "")

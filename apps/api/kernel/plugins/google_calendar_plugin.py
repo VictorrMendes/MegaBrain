@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from kernel.plugins.base import Plugin, PluginRegistry, PluginResult
+from kernel.plugins.base import ConfigField, Plugin, PluginRegistry, PluginResult
 
 _BASE = "https://www.googleapis.com/calendar/v3/calendars"
 
@@ -11,6 +11,11 @@ _BASE = "https://www.googleapis.com/calendar/v3/calendars"
 class GoogleCalendarPlugin(Plugin):
     name = "google_calendar"
     description = "Cria e consulta eventos no Google Calendar via OAuth2 access token"
+    category = "productivity"
+    config_fields = [
+        ConfigField("access_token",  "Access Token OAuth2", "password", required=True),
+        ConfigField("calendar_id",   "Calendar ID",          "text",    placeholder="primary"),
+    ]
 
     async def execute(self, action: str, params: dict) -> PluginResult:
         token = self.config.get("access_token", "")

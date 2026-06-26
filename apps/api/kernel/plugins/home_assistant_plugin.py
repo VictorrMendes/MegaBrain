@@ -1,12 +1,17 @@
 import httpx
 
-from kernel.plugins.base import Plugin, PluginRegistry, PluginResult
+from kernel.plugins.base import ConfigField, Plugin, PluginRegistry, PluginResult
 
 
 @PluginRegistry.register
 class HomeAssistantPlugin(Plugin):
     name = "home_assistant"
     description = "Controla dispositivos e lê sensores via Home Assistant REST API"
+    category = "smart_home"
+    config_fields = [
+        ConfigField("url",   "URL do Home Assistant", "url",      required=True, placeholder="http://homeassistant.local:8123"),
+        ConfigField("token", "Long-Lived Token",       "password", required=True),
+    ]
 
     async def execute(self, action: str, params: dict) -> PluginResult:
         base_url = self.config.get("url", "http://homeassistant.local:8123").rstrip("/")

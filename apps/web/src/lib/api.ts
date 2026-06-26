@@ -41,9 +41,19 @@ export interface Document {
   updated_at: string;
 }
 
+export interface PluginConfigField {
+  name: string;
+  label: string;
+  type: string;
+  required: boolean;
+  placeholder: string;
+}
+
 export interface AvailablePlugin {
   name: string;
   description: string;
+  category: string;
+  config_fields: PluginConfigField[];
 }
 
 export interface WorkspacePlugin {
