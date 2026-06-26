@@ -216,11 +216,15 @@ function TabChip({
 function ConfidenceBar({ value }: { value: number }) {
   const pct     = Math.round(value * 100);
   const variant = confidenceBadge(value);
-  const barColor = {
+  const barColor = ({
     success: "bg-status-success",
     warning: "bg-status-warning",
     error:   "bg-status-error",
-  }[variant] ?? "bg-content-muted";
+    active:  "bg-accent",
+    info:    "bg-blue-400",
+    default: "bg-content-muted",
+    muted:   "bg-content-muted",
+  } satisfies Record<BadgeVariant, string>)[variant];
 
   return (
     <div className="flex items-center gap-2">

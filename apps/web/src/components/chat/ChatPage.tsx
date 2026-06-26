@@ -6,6 +6,7 @@ import {
   MessageSquareIcon,
   PaperclipIcon,
   FileTextIcon,
+  FlaskConicalIcon,
   Trash2Icon,
   PuzzleIcon,
   CheckIcon,
@@ -20,11 +21,11 @@ import {
   type WorkspacePlugin,
 } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { Spinner } from "@/components/ui";
+import { Dialog, DialogContent, DialogFooter, Input, Spinner } from "@/components/ui";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
-import { ContextPanel } from "./ContextPanel";
+import { ContextPanel, type ContextPanelCapability } from "./ContextPanel";
 import type { ChatMessageData, ContextUsed } from "./ChatMessage";
 
 // ─────────────────────────────────────────────────────────────
@@ -328,6 +329,15 @@ export function ChatPage() {
   const activeContextMsg = messages.find((m) => m.id === activeContextMsgId);
   const showContextPanel = Boolean(activeContextMsg?.contextUsed);
 
+  const capabilities: ContextPanelCapability[] = availablePlugins.map((ap) => {
+    const wp = workspacePlugins.find((p) => p.plugin_name === ap.name);
+    return {
+      name:        PLUGIN_LABELS[ap.name] ?? ap.name,
+      description: ap.description,
+      enabled:     wp?.is_enabled ?? false,
+    };
+  });
+
   // ─── loading state ───
   if (wsLoading) {
     return (
@@ -511,13 +521,17 @@ export function ChatPage() {
         {/* Header */}
         <header
           className={cn(
-            "flex h-11 shrink-0 items-center border-b border-[var(--border-subtle)]",
+            "flex h-11 shrink-0 items-center justify-between border-b border-[var(--border-subtle)]",
             "px-5",
           )}
         >
           <span className="text-sm text-content-secondary truncate">
             {conversations.find((c) => c.id === activeConvId)?.title ?? "Nova conversa"}
           </span>
+          <div className="flex items-center gap-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-2 py-1">
+            <FlaskConicalIcon size={10} className="text-accent" />
+            <span className="text-[10px] font-medium text-content-muted">Intelligence Lab</span>
+          </div>
         </header>
 
         <MessageList
@@ -527,76 +541,63 @@ export function ChatPage() {
           }
         />
 
-        <ChatInput onSend={handleSend} disabled={isStreaming} />
+        <ChatInput onSend={handleSend} disabled={isStreaming} streaming={isStreaming} />
       </main>
 
       {/* ── Context panel ── */}
       {showContextPanel && activeContextMsg?.contextUsed && (
         <ContextPanel
           context={activeContextMsg.contextUsed}
+          capabilities={capabilities}
           onClose={() => setActiveContextMsgId(null)}
         />
       )}
 
       {/* ── Plugin config modal ── */}
-      {configModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div
-            className={cn(
-              "w-96 rounded-xl p-6 shadow-2xl",
-              "border border-[var(--border-default)] bg-[var(--surface-overlay)]",
-            )}
-          >
-            <h2 className="mb-1 text-sm font-semibold text-content-primary">
-              {PLUGIN_LABELS[configModal.plugin.name] ?? configModal.plugin.name}
-            </h2>
-            <p className="mb-5 text-xs text-content-muted">{configModal.plugin.description}</p>
+      <Dialog open={Boolean(configModal)} onOpenChange={(open) => !open && setConfigModal(null)}>
+        <DialogContent size="sm" title={PLUGIN_LABELS[configModal?.plugin.name ?? ""] ?? configModal?.plugin.name ?? ""} onClose={() => setConfigModal(null)}>
+          {configModal && (
+            <>
+              <p className="mb-4 text-xs text-content-muted">{configModal.plugin.description}</p>
 
-            <div className="space-y-3">
-              {(PLUGIN_CONFIG_FIELDS[configModal.plugin.name] ?? []).map((field) => (
-                <div key={field.key}>
-                  <label className="mb-1 block text-xs text-content-secondary">
-                    {field.label}
-                  </label>
-                  <input
-                    type="text"
-                    value={configValues[field.key] ?? ""}
-                    onChange={(e) =>
-                      setConfigValues((prev) => ({ ...prev, [field.key]: e.target.value }))
-                    }
-                    placeholder={field.placeholder}
-                    className={cn(
-                      "w-full rounded-lg border px-3 py-2 text-xs",
-                      "border-[var(--border-default)] bg-[var(--surface-raised)]",
-                      "text-content-primary placeholder:text-content-placeholder",
-                      "outline-none focus:border-[var(--border-accent)]",
-                      "transition-colors",
-                    )}
-                  />
-                </div>
-              ))}
-              {(PLUGIN_CONFIG_FIELDS[configModal.plugin.name] ?? []).length === 0 && (
-                <p className="text-xs text-content-muted">Nenhuma configuração necessária.</p>
-              )}
-            </div>
+              <div className="space-y-3">
+                {(PLUGIN_CONFIG_FIELDS[configModal.plugin.name] ?? []).map((field) => (
+                  <div key={field.key}>
+                    <label className="mb-1.5 block text-xs font-medium text-content-secondary">
+                      {field.label}
+                    </label>
+                    <Input
+                      value={configValues[field.key] ?? ""}
+                      onChange={(e) =>
+                        setConfigValues((prev) => ({ ...prev, [field.key]: e.target.value }))
+                      }
+                      placeholder={field.placeholder}
+                    />
+                  </div>
+                ))}
+                {(PLUGIN_CONFIG_FIELDS[configModal.plugin.name] ?? []).length === 0 && (
+                  <p className="text-xs text-content-muted">Nenhuma configuração necessária.</p>
+                )}
+              </div>
 
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                onClick={() => setConfigModal(null)}
-                className="rounded-lg px-4 py-2 text-xs text-content-muted hover:text-content-primary transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSavePlugin}
-                className="rounded-lg bg-accent px-4 py-2 text-xs text-white hover:bg-accent-hover transition-colors"
-              >
-                Salvar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              <DialogFooter>
+                <button
+                  onClick={() => setConfigModal(null)}
+                  className="rounded-lg px-4 py-2 text-xs text-content-muted hover:text-content-primary transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSavePlugin}
+                  className="rounded-lg bg-accent px-4 py-2 text-xs text-white hover:bg-accent-hover transition-colors"
+                >
+                  Salvar
+                </button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

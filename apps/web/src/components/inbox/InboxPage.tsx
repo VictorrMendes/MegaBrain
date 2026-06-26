@@ -119,9 +119,9 @@ export function InboxPage() {
           <Button
             variant="secondary"
             size="sm"
-            leftIcon={<PlusIcon size={12} />}
             onClick={() => setShowNew((v) => !v)}
           >
+            <PlusIcon size={12} className="mr-1.5" />
             Novo
           </Button>
         </div>
@@ -161,10 +161,12 @@ export function InboxPage() {
                 <Button
                   variant="primary"
                   size="sm"
-                  leftIcon={submitting ? <Spinner size="sm" className="text-white" /> : <SendIcon size={12} />}
                   onClick={submit}
                   disabled={!newContent.trim() || submitting}
                 >
+                  {submitting
+                    ? <Spinner size="sm" className="text-white mr-1.5" />
+                    : <SendIcon size={12} className="mr-1.5" />}
                   Enviar
                 </Button>
               </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { SparklesIcon } from "lucide-react";
 import { ChatMessage, type ChatMessageData } from "./ChatMessage";
 
 interface MessageListProps {
@@ -17,14 +18,17 @@ export function MessageList({ messages, onContextClick }: MessageListProps) {
 
   if (messages.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent-dim">
-          <span className="h-3 w-3 rounded-full bg-accent" />
+      <div className="flex flex-1 flex-col items-center justify-center gap-3">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-dim shadow-glow-sm">
+          <SparklesIcon size={22} className="text-accent" />
         </div>
-        <p className="text-sm text-content-muted">Inicie uma conversa</p>
-        <p className="text-xs text-content-placeholder">
-          O PAIOS acessa sua memória e conhecimento automaticamente
-        </p>
+        <div className="text-center">
+          <p className="text-sm font-medium text-content-secondary">Intelligence Lab</p>
+          <p className="mt-1 text-xs text-content-muted max-w-xs">
+            Cada resposta acessa memória, conhecimento e documentos automaticamente.
+            O pipeline cognitivo é exibido em tempo real.
+          </p>
+        </div>
       </div>
     );
   }

@@ -160,7 +160,6 @@ const SIGNAL_LABEL_COLOR: Record<Briefing["signal"], string> = {
 // ─────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
-  const router = useRouter();
   const { current: workspace, loading: wsLoading } = useWorkspace();
   const [data,       setData]       = useState<DashboardSummary | null>(null);
   const [loading,    setLoading]    = useState(false);
