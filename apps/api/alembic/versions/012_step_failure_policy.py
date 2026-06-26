@@ -17,6 +17,10 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    op.execute(
+        "CREATE TYPE failure_policy AS ENUM "
+        "('retry', 'abort', 'skip', 'ignore')"
+    )
     op.add_column(
         "mission_steps",
         sa.Column(
@@ -24,6 +28,7 @@ def upgrade() -> None:
             sa.Enum(
                 "retry", "abort", "skip", "ignore",
                 name="failure_policy",
+                create_type=False,
             ),
             nullable=False,
             server_default="retry",
