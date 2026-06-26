@@ -1,17 +1,17 @@
 "use client";
 
-import { KeyboardEvent, useRef, useState } from "react";
-import { SendIcon } from "lucide-react";
+import { type KeyboardEvent, useRef, useState } from "react";
+import { ArrowUpIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 interface ChatInputProps {
-  onSend: (message: string) => void;
+  onSend:    (message: string) => void;
   disabled?: boolean;
 }
 
 export function ChatInput({ onSend, disabled }: ChatInputProps) {
-  const [value, setValue] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [value, setValue]     = useState("");
+  const textareaRef           = useRef<HTMLTextAreaElement>(null);
 
   function handleSend() {
     const trimmed = value.trim();
@@ -37,38 +37,56 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }
 
+  const canSend = Boolean(value.trim()) && !disabled;
+
   return (
-    <div className="border-t border-neutral-800 bg-neutral-950 p-4">
-      <div className="mx-auto max-w-3xl flex items-end gap-3">
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onInput={handleInput}
-          placeholder="Mensagem…"
-          rows={1}
-          disabled={disabled}
+    <div className="border-t border-[var(--border-subtle)] bg-[var(--surface-base)] px-5 py-4">
+      <div className="mx-auto max-w-3xl">
+        <div
           className={cn(
-            "flex-1 resize-none rounded-lg border border-neutral-700 bg-neutral-900",
-            "px-4 py-3 text-sm text-neutral-100 placeholder-neutral-500",
-            "focus:outline-none focus:border-neutral-500",
-            "disabled:opacity-40 disabled:cursor-not-allowed",
-            "transition-colors overflow-hidden"
-          )}
-        />
-        <button
-          onClick={handleSend}
-          disabled={disabled || !value.trim()}
-          className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
-            "bg-neutral-100 text-neutral-900 transition-colors",
-            "hover:bg-white",
-            "disabled:opacity-30 disabled:cursor-not-allowed"
+            "flex items-end gap-3 rounded-xl",
+            "border border-[var(--border-default)] bg-[var(--surface-raised)]",
+            "px-4 py-3",
+            "focus-within:border-[var(--border-accent)]",
+            "transition-colors",
           )}
         >
-          <SendIcon size={16} />
-        </button>
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onInput={handleInput}
+            placeholder="Mensagem…"
+            rows={1}
+            disabled={disabled}
+            className={cn(
+              "flex-1 resize-none bg-transparent text-sm text-content-primary",
+              "placeholder:text-content-placeholder",
+              "focus:outline-none",
+              "disabled:opacity-40 disabled:cursor-not-allowed",
+              "overflow-hidden leading-relaxed",
+            )}
+          />
+
+          <button
+            onClick={handleSend}
+            disabled={!canSend}
+            className={cn(
+              "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+              "transition-colors",
+              canSend
+                ? "bg-accent text-white hover:bg-accent-hover"
+                : "bg-[var(--surface-subtle)] text-content-muted cursor-not-allowed",
+            )}
+          >
+            <ArrowUpIcon size={14} strokeWidth={2.5} />
+          </button>
+        </div>
+
+        <p className="mt-2 text-center text-[11px] text-content-muted">
+          Enter para enviar · Shift+Enter para nova linha · Ctrl+K para busca
+        </p>
       </div>
     </div>
   );

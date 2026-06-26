@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   PlusIcon,
   MessageSquareIcon,
-  LoaderIcon,
   PaperclipIcon,
   FileTextIcon,
   Trash2Icon,
@@ -18,149 +17,158 @@ import {
   type Conversation,
   type Document,
   type StreamEvent,
-  type Workspace,
   type WorkspacePlugin,
 } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { Spinner } from "@/components/ui";
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
+import { ContextPanel } from "./ContextPanel";
+import type { ChatMessageData, ContextUsed } from "./ChatMessage";
+
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
 
 function uuid(): string {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (crypto as any).randomUUID?.() ?? "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
-  });
+  return (crypto as any).randomUUID?.() ??
+    "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+    });
 }
-import type { ChatMessageData } from "./ChatMessage";
-
-type AppState =
-  | { status: "loading" }
-  | { status: "error"; message: string }
-  | { status: "ready"; workspace: Workspace };
-
-type ConfigModal = {
-  plugin: AvailablePlugin;
-  existing: WorkspacePlugin | null;
-};
 
 const PLUGIN_LABELS: Record<string, string> = {
-  ntfy: "ntfy",
-  weather: "Clima",
-  web_search: "Web Search",
-  home_assistant: "Home Assistant",
-  notion: "Notion",
-  google_calendar: "Google Calendar",
+  ntfy:             "ntfy",
+  weather:          "Clima",
+  web_search:       "Web Search",
+  home_assistant:   "Home Assistant",
+  notion:           "Notion",
+  google_calendar:  "Google Calendar",
 };
 
-const PLUGIN_CONFIG_FIELDS: Record<string, { key: string; label: string; placeholder: string }[]> = {
+const PLUGIN_CONFIG_FIELDS: Record<
+  string,
+  { key: string; label: string; placeholder: string }[]
+> = {
   ntfy: [
-    { key: "url", label: "URL do servidor", placeholder: "http://192.168.1.26:2586" },
-    { key: "topic", label: "Tópico", placeholder: "khonshu" },
+    { key: "url",   label: "URL do servidor", placeholder: "http://192.168.1.26:2586" },
+    { key: "topic", label: "Tópico",          placeholder: "khonshu"                  },
   ],
   weather: [
     { key: "default_location", label: "Cidade padrão", placeholder: "São Paulo" },
   ],
   web_search: [],
   home_assistant: [
-    { key: "url", label: "URL do HA", placeholder: "http://homeassistant.local:8123" },
-    { key: "token", label: "Long-lived token", placeholder: "eyJ..." },
+    { key: "url",   label: "URL do HA",          placeholder: "http://homeassistant.local:8123" },
+    { key: "token", label: "Long-lived token",    placeholder: "eyJ..."                         },
   ],
   notion: [
-    { key: "token", label: "Integration token", placeholder: "secret_..." },
-    { key: "default_page_id", label: "ID da página padrão", placeholder: "..." },
+    { key: "token",           label: "Integration token",    placeholder: "secret_..." },
+    { key: "default_page_id", label: "ID da página padrão",  placeholder: "..."        },
   ],
   google_calendar: [
-    { key: "access_token", label: "Access token OAuth2", placeholder: "ya29..." },
-    { key: "calendar_id", label: "Calendar ID", placeholder: "primary" },
-    { key: "timezone", label: "Fuso horário", placeholder: "America/Sao_Paulo" },
+    { key: "access_token", label: "Access token OAuth2", placeholder: "ya29..."               },
+    { key: "calendar_id",  label: "Calendar ID",         placeholder: "primary"               },
+    { key: "timezone",     label: "Fuso horário",        placeholder: "America/Sao_Paulo"     },
   ],
 };
 
+type ConfigModal = {
+  plugin:   AvailablePlugin;
+  existing: WorkspacePlugin | null;
+};
+
+// ─────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────
+
 export function ChatPage() {
-  const [appState, setAppState] = useState<AppState>({ status: "loading" });
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessageData[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
+  const { current: workspace, loading: wsLoading } = useWorkspace();
+
+  const [conversations,    setConversations]    = useState<Conversation[]>([]);
+  const [activeConvId,     setActiveConvId]     = useState<string | null>(null);
+  const [messages,         setMessages]         = useState<ChatMessageData[]>([]);
+  const [isStreaming,      setIsStreaming]       = useState(false);
+
+  const [documents,        setDocuments]        = useState<Document[]>([]);
+  const [isUploading,      setIsUploading]      = useState(false);
+
   const [availablePlugins, setAvailablePlugins] = useState<AvailablePlugin[]>([]);
   const [workspacePlugins, setWorkspacePlugins] = useState<WorkspacePlugin[]>([]);
-  const [configModal, setConfigModal] = useState<ConfigModal | null>(null);
-  const [configValues, setConfigValues] = useState<Record<string, string>>({});
+  const [configModal,      setConfigModal]      = useState<ConfigModal | null>(null);
+  const [configValues,     setConfigValues]     = useState<Record<string, string>>({});
+
+  // Context panel
+  const [activeContextMsgId, setActiveContextMsgId] = useState<string | null>(null);
+
+  const fileInputRef   = useRef<HTMLInputElement>(null);
   const streamingIdRef = useRef<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ─── init on workspace change ───
   useEffect(() => {
-    async function init() {
-      try {
-        let workspaces = await api.listWorkspaces();
-        if (workspaces.length === 0) {
-          const ws = await api.createWorkspace("Personal", "Workspace pessoal");
-          workspaces = [ws];
-        }
-        const workspace = workspaces[0];
-        setAppState({ status: "ready", workspace });
+    if (!workspace) return;
+    setConversations([]);
+    setMessages([]);
+    setActiveConvId(null);
+    setActiveContextMsgId(null);
 
-        const [convs, docs, available, wPlugins] = await Promise.all([
-          api.listConversations(workspace.id),
-          api.listDocuments(workspace.id),
-          api.listAvailablePlugins(workspace.id),
-          api.listWorkspacePlugins(workspace.id),
-        ]);
-        setConversations(convs);
-        setDocuments(docs);
-        setAvailablePlugins(available);
-        setWorkspacePlugins(wPlugins);
+    (async () => {
+      const [convs, docs, available, wPlugins] = await Promise.all([
+        api.listConversations(workspace.id),
+        api.listDocuments(workspace.id),
+        api.listAvailablePlugins(workspace.id),
+        api.listWorkspacePlugins(workspace.id),
+      ]);
+      setConversations(convs);
+      setDocuments(docs);
+      setAvailablePlugins(available);
+      setWorkspacePlugins(wPlugins);
 
-        if (convs.length > 0) {
-          await loadConversation(workspace.id, convs[0].id);
-        }
-      } catch (e) {
-        setAppState({
-          status: "error",
-          message: e instanceof Error ? e.message : "Erro ao conectar na API",
-        });
+      if (convs.length > 0) {
+        await loadConversation(workspace.id, convs[0].id);
       }
-    }
-    init();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    })();
+  }, [workspace?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ─── load conversation ───
   async function loadConversation(workspaceId: string, conversationId: string) {
-    setActiveConversationId(conversationId);
+    setActiveConvId(conversationId);
+    setActiveContextMsgId(null);
     const msgs = await api.getMessages(workspaceId, conversationId);
     setMessages(
       msgs
         .filter((m) => m.role !== "system")
         .map((m) => ({
-          id: m.id,
-          role: m.role as "user" | "assistant",
+          id:      m.id,
+          role:    m.role as "user" | "assistant",
           content: m.content,
-        }))
+        })),
     );
   }
 
+  // ─── new conversation ───
   async function handleNewConversation() {
-    if (appState.status !== "ready") return;
+    if (!workspace) return;
     const title = `Conversa ${conversations.length + 1}`;
-    const conv = await api.createConversation(appState.workspace.id, title);
+    const conv  = await api.createConversation(workspace.id, title);
     setConversations((prev) => [conv, ...prev]);
-    setActiveConversationId(conv.id);
+    setActiveConvId(conv.id);
     setMessages([]);
+    setActiveContextMsgId(null);
   }
 
+  // ─── document upload ───
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    if (appState.status !== "ready") return;
+    if (!workspace) return;
     const file = e.target.files?.[0];
     if (!file) return;
-
     setIsUploading(true);
     try {
-      const doc = await api.uploadDocument(appState.workspace.id, file);
+      const doc = await api.uploadDocument(workspace.id, file);
       setDocuments((prev) => [doc, ...prev]);
-    } catch (err) {
-      console.error("Upload failed:", err);
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -168,22 +176,23 @@ export function ChatPage() {
   }
 
   async function handleDeleteDocument(docId: string) {
-    if (appState.status !== "ready") return;
-    await api.deleteDocument(appState.workspace.id, docId);
+    if (!workspace) return;
+    await api.deleteDocument(workspace.id, docId);
     setDocuments((prev) => prev.filter((d) => d.id !== docId));
   }
 
+  // ─── plugin management ───
   function openPluginConfig(plugin: AvailablePlugin) {
-    if (appState.status !== "ready") return;
+    if (!workspace) return;
     const existing = workspacePlugins.find((p) => p.plugin_name === plugin.name) ?? null;
     setConfigModal({ plugin, existing });
     setConfigValues(existing?.config ?? {});
   }
 
   async function handleSavePlugin() {
-    if (!configModal || appState.status !== "ready") return;
+    if (!configModal || !workspace) return;
     const saved = await api.upsertPlugin(
-      appState.workspace.id,
+      workspace.id,
       configModal.plugin.name,
       configValues,
       true,
@@ -196,200 +205,205 @@ export function ChatPage() {
   }
 
   async function handleTogglePlugin(wp: WorkspacePlugin) {
-    if (appState.status !== "ready") return;
-    const updated = await api.togglePlugin(appState.workspace.id, wp.id, !wp.is_enabled);
+    if (!workspace) return;
+    const updated = await api.togglePlugin(workspace.id, wp.id, !wp.is_enabled);
     setWorkspacePlugins((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
   }
 
   async function handleRemovePlugin(wp: WorkspacePlugin) {
-    if (appState.status !== "ready") return;
-    await api.deletePlugin(appState.workspace.id, wp.id);
+    if (!workspace) return;
+    await api.deletePlugin(workspace.id, wp.id);
     setWorkspacePlugins((prev) => prev.filter((p) => p.id !== wp.id));
   }
 
+  // ─── send message ───
   const handleSend = useCallback(
     async (content: string) => {
-      if (appState.status !== "ready" || isStreaming) return;
+      if (!workspace || isStreaming) return;
 
-      let conversationId = activeConversationId;
-
+      let conversationId = activeConvId;
       if (!conversationId) {
         const title = content.slice(0, 40) + (content.length > 40 ? "…" : "");
-        const conv = await api.createConversation(appState.workspace.id, title);
+        const conv  = await api.createConversation(workspace.id, title);
         setConversations((prev) => [conv, ...prev]);
-        setActiveConversationId(conv.id);
+        setActiveConvId(conv.id);
         conversationId = conv.id;
       }
 
-      const userMsg: ChatMessageData = {
-        id: uuid(),
-        role: "user",
-        content,
-      };
-      const streamingId = uuid();
-      streamingIdRef.current = streamingId;
-
+      const userMsg: ChatMessageData = { id: uuid(), role: "user", content };
+      const streamingId              = uuid();
+      streamingIdRef.current         = streamingId;
       const assistantMsg: ChatMessageData = {
-        id: streamingId,
-        role: "assistant",
-        content: "",
-        streaming: true,
-        statusHint: "Pensando…",
+        id:          streamingId,
+        role:        "assistant",
+        content:     "",
+        streaming:   true,
+        streamPhase: "thinking",
       };
 
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setIsStreaming(true);
+      // Close context panel while user waits
+      setActiveContextMsgId(null);
+
+      let capturedContext: ContextUsed | undefined;
 
       await api.streamMessage(
-        appState.workspace.id,
+        workspace.id,
         conversationId,
         content,
         (evt: StreamEvent) => {
           if (evt.event === "thinking") {
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === streamingId
-                  ? { ...m, statusHint: "Pensando…" }
-                  : m
-              )
+                m.id === streamingId ? { ...m, streamPhase: "thinking" } : m,
+              ),
             );
           } else if (evt.event === "reading_memory") {
-            const hint = [
-              evt.memory > 0 && `${evt.memory} memórias`,
-              evt.knowledge > 0 && `${evt.knowledge} fatos`,
-              evt.chunks > 0 && `${evt.chunks} documentos`,
-            ]
-              .filter(Boolean)
-              .join(", ");
+            capturedContext = {
+              memory:    evt.memory,
+              knowledge: evt.knowledge,
+              chunks:    evt.chunks,
+            };
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === streamingId
-                  ? { ...m, statusHint: hint ? `Lendo ${hint}…` : "Lendo contexto…" }
-                  : m
-              )
+                  ? { ...m, streamPhase: "reading", contextUsed: capturedContext }
+                  : m,
+              ),
             );
           } else if (evt.event === "text") {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === streamingId
-                  ? { ...m, content: m.content + evt.content, statusHint: undefined }
-                  : m
-              )
+                  ? { ...m, content: m.content + evt.content, streamPhase: "writing" }
+                  : m,
+              ),
             );
           } else if (evt.event === "error") {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === streamingId
-                  ? { ...m, content: `Erro: ${evt.message}`, streaming: false, statusHint: undefined }
-                  : m
-              )
+                  ? { ...m, content: `Erro: ${evt.message}`, streaming: false, streamPhase: null }
+                  : m,
+              ),
             );
             setIsStreaming(false);
           }
         },
         () => {
+          // done
           setMessages((prev) =>
             prev.map((m) =>
               m.id === streamingId
-                ? { ...m, streaming: false, statusHint: undefined }
-                : m
-            )
+                ? { ...m, streaming: false, streamPhase: null, contextUsed: capturedContext }
+                : m,
+            ),
           );
           setIsStreaming(false);
+          // Auto-open context panel if there's context
+          if (
+            capturedContext &&
+            (capturedContext.memory > 0 || capturedContext.knowledge > 0 || capturedContext.chunks > 0)
+          ) {
+            setActiveContextMsgId(streamingId);
+          }
         },
         (err) => {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === streamingId
-                ? { ...m, content: `Erro: ${err.message}`, streaming: false, statusHint: undefined }
-                : m
-            )
+                ? { ...m, content: `Erro: ${err.message}`, streaming: false, streamPhase: null }
+                : m,
+            ),
           );
           setIsStreaming(false);
-        }
+        },
       );
     },
-    [appState, activeConversationId, isStreaming]
+    [workspace, activeConvId, isStreaming],
   );
 
-  if (appState.status === "loading") {
+  // ─── context panel ───
+  const activeContextMsg = messages.find((m) => m.id === activeContextMsgId);
+  const showContextPanel = Boolean(activeContextMsg?.contextUsed);
+
+  // ─── loading state ───
+  if (wsLoading) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <LoaderIcon size={20} className="animate-spin text-neutral-500" />
+      <div className="flex h-full items-center justify-center">
+        <Spinner size="md" />
       </div>
     );
   }
 
-  if (appState.status === "error") {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-center space-y-2">
-          <p className="text-sm text-red-400">{appState.message}</p>
-          <p className="text-xs text-neutral-600">
-            Verifique se a API está rodando em localhost:8100
-          </p>
-        </div>
-      </div>
-    );
-  }
-
+  // ─── render ───
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Sidebar */}
-      <aside className="flex w-60 shrink-0 flex-col border-r border-neutral-800 bg-neutral-900">
-        <div className="flex items-center justify-between px-4 py-4 border-b border-neutral-800">
-          <span className="text-xs font-semibold tracking-widest text-neutral-400 uppercase">
-            Khonshu
+
+      {/* ── Sidebar ── */}
+      <aside
+        className={cn(
+          "flex w-52 shrink-0 flex-col",
+          "border-r border-[var(--border-subtle)] bg-[var(--surface-raised)]",
+        )}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
+          <span className="text-[11px] font-semibold uppercase tracking-widest text-content-muted">
+            Conversas
           </span>
           <button
             onClick={handleNewConversation}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100 transition-colors"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-content-muted hover:bg-[var(--surface-subtle)] hover:text-content-secondary transition-colors"
             title="Nova conversa"
           >
-            <PlusIcon size={15} />
+            <PlusIcon size={14} />
           </button>
         </div>
 
-        {/* Conversations */}
-        <nav className="flex-1 overflow-y-auto py-2 min-h-0">
+        {/* Conversation list */}
+        <nav className="flex-1 overflow-y-auto py-1.5 min-h-0">
           {conversations.length === 0 ? (
-            <p className="px-4 py-3 text-xs text-neutral-600">Nenhuma conversa</p>
+            <p className="px-4 py-3 text-xs text-content-muted">Nenhuma conversa</p>
           ) : (
-            conversations.map((conv) => (
-              <button
-                key={conv.id}
-                onClick={() => loadConversation(appState.workspace.id, conv.id)}
-                className={cn(
-                  "flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs transition-colors",
-                  activeConversationId === conv.id
-                    ? "bg-neutral-800 text-neutral-100"
-                    : "text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-200"
-                )}
-              >
-                <MessageSquareIcon size={13} className="shrink-0" />
-                <span className="truncate">{conv.title}</span>
-              </button>
-            ))
+            conversations.map((conv) => {
+              const isActive = activeConvId === conv.id;
+              return (
+                <button
+                  key={conv.id}
+                  onClick={() => workspace && loadConversation(workspace.id, conv.id)}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
+                    isActive
+                      ? "bg-[var(--surface-overlay)] text-content-primary"
+                      : "text-content-secondary hover:bg-[var(--surface-subtle)] hover:text-content-primary",
+                  )}
+                >
+                  <MessageSquareIcon
+                    size={12}
+                    className={cn("shrink-0", isActive ? "text-accent" : "text-content-muted")}
+                  />
+                  <span className="truncate">{conv.title}</span>
+                </button>
+              );
+            })
           )}
         </nav>
 
         {/* Documents */}
-        <div className="border-t border-neutral-800 flex flex-col max-h-48">
+        <div className="border-t border-[var(--border-subtle)] flex flex-col max-h-40">
           <div className="flex items-center justify-between px-4 py-2">
-            <span className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-content-muted">
               Documentos
             </span>
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploading}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100 transition-colors disabled:opacity-40"
+              className="flex h-5 w-5 items-center justify-center rounded text-content-muted hover:bg-[var(--surface-subtle)] hover:text-content-secondary transition-colors disabled:opacity-40"
               title="Adicionar documento"
             >
-              {isUploading ? (
-                <LoaderIcon size={13} className="animate-spin" />
-              ) : (
-                <PaperclipIcon size={13} />
-              )}
+              {isUploading ? <Spinner size="sm" /> : <PaperclipIcon size={12} />}
             </button>
             <input
               ref={fileInputRef}
@@ -399,27 +413,28 @@ export function ChatPage() {
               onChange={handleUpload}
             />
           </div>
-
-          <div className="overflow-y-auto pb-2">
+          <div className="overflow-y-auto pb-1.5">
             {documents.length === 0 ? (
-              <p className="px-4 pb-2 text-xs text-neutral-600">Nenhum documento</p>
+              <p className="px-4 pb-2 text-xs text-content-placeholder">Nenhum documento</p>
             ) : (
               documents.map((doc) => (
                 <div
                   key={doc.id}
-                  className="group flex items-center gap-2 px-4 py-1.5 text-xs text-neutral-400"
+                  className="group flex items-center gap-2 px-3 py-1.5 text-xs"
                 >
-                  {doc.status === "ready" ? (
-                    <FileTextIcon size={12} className="shrink-0 text-emerald-500" />
-                  ) : doc.status === "failed" ? (
-                    <FileTextIcon size={12} className="shrink-0 text-red-500" />
-                  ) : (
-                    <LoaderIcon size={12} className="shrink-0 animate-spin" />
-                  )}
-                  <span className="truncate flex-1">{doc.filename}</span>
+                  <FileTextIcon
+                    size={11}
+                    className={cn(
+                      "shrink-0",
+                      doc.status === "ready"  && "text-status-success",
+                      doc.status === "failed" && "text-status-error",
+                      doc.status === "processing" && "text-content-muted",
+                    )}
+                  />
+                  <span className="truncate flex-1 text-content-secondary">{doc.filename}</span>
                   <button
                     onClick={() => handleDeleteDocument(doc.id)}
-                    className="hidden group-hover:flex h-5 w-5 items-center justify-center rounded text-neutral-600 hover:text-red-400 transition-colors"
+                    className="hidden group-hover:flex items-center justify-center text-content-muted hover:text-status-error transition-colors"
                   >
                     <Trash2Icon size={11} />
                   </button>
@@ -430,60 +445,55 @@ export function ChatPage() {
         </div>
 
         {/* Plugins */}
-        <div className="border-t border-neutral-800 flex flex-col max-h-56">
+        <div className="border-t border-[var(--border-subtle)] flex flex-col max-h-52">
           <div className="flex items-center justify-between px-4 py-2">
-            <span className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-content-muted">
               Plugins
             </span>
-            <PuzzleIcon size={13} className="text-neutral-600" />
+            <PuzzleIcon size={12} className="text-content-muted" />
           </div>
-
-          <div className="overflow-y-auto pb-2">
+          <div className="overflow-y-auto pb-1.5">
             {availablePlugins.length === 0 ? (
-              <p className="px-4 pb-2 text-xs text-neutral-600">Carregando...</p>
+              <p className="px-4 pb-2 text-xs text-content-placeholder">Carregando…</p>
             ) : (
               availablePlugins.map((ap) => {
-                const wp = workspacePlugins.find((p) => p.plugin_name === ap.name);
+                const wp       = workspacePlugins.find((p) => p.plugin_name === ap.name);
                 const isActive = wp?.is_enabled ?? false;
                 return (
-                  <div
-                    key={ap.name}
-                    className="group flex items-center gap-2 px-4 py-1.5 text-xs"
-                  >
+                  <div key={ap.name} className="group flex items-center gap-2 px-3 py-1.5 text-xs">
                     <button
                       onClick={() => wp && handleTogglePlugin(wp)}
                       disabled={!wp}
                       className={cn(
                         "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
                         isActive
-                          ? "border-emerald-500 bg-emerald-500 text-neutral-900"
-                          : "border-neutral-700 text-transparent"
+                          ? "border-status-success bg-status-success text-surface-base"
+                          : "border-[var(--border-strong)] text-transparent",
                       )}
                       title={isActive ? "Desativar" : "Ativar"}
                     >
-                      <CheckIcon size={10} />
+                      <CheckIcon size={9} />
                     </button>
                     <span
                       className={cn(
                         "flex-1 truncate cursor-pointer",
-                        isActive ? "text-neutral-200" : "text-neutral-500"
+                        isActive ? "text-content-primary" : "text-content-muted",
                       )}
                       onClick={() => openPluginConfig(ap)}
                     >
                       {PLUGIN_LABELS[ap.name] ?? ap.name}
                     </span>
-                    {wp && (
+                    {wp ? (
                       <button
                         onClick={() => handleRemovePlugin(wp)}
-                        className="hidden group-hover:flex h-5 w-5 items-center justify-center rounded text-neutral-600 hover:text-red-400 transition-colors"
+                        className="hidden group-hover:flex items-center justify-center text-content-muted hover:text-status-error transition-colors"
                       >
                         <XIcon size={10} />
                       </button>
-                    )}
-                    {!wp && (
+                    ) : (
                       <button
                         onClick={() => openPluginConfig(ap)}
-                        className="text-[10px] text-neutral-600 hover:text-neutral-300 transition-colors"
+                        className="text-[10px] text-content-muted hover:text-content-secondary transition-colors"
                       >
                         config
                       </button>
@@ -496,32 +506,58 @@ export function ChatPage() {
         </div>
       </aside>
 
-      {/* Main */}
-      <main className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-12 items-center border-b border-neutral-800 px-6 shrink-0">
-          <span className="text-sm text-neutral-400">
-            {conversations.find((c) => c.id === activeConversationId)?.title ?? "Nova conversa"}
+      {/* ── Main chat area ── */}
+      <main className="flex flex-1 flex-col overflow-hidden min-w-0">
+        {/* Header */}
+        <header
+          className={cn(
+            "flex h-11 shrink-0 items-center border-b border-[var(--border-subtle)]",
+            "px-5",
+          )}
+        >
+          <span className="text-sm text-content-secondary truncate">
+            {conversations.find((c) => c.id === activeConvId)?.title ?? "Nova conversa"}
           </span>
         </header>
 
-        <MessageList messages={messages} />
+        <MessageList
+          messages={messages}
+          onContextClick={(msgId) =>
+            setActiveContextMsgId((prev) => (prev === msgId ? null : msgId))
+          }
+        />
 
         <ChatInput onSend={handleSend} disabled={isStreaming} />
       </main>
 
-      {/* Plugin config modal */}
+      {/* ── Context panel ── */}
+      {showContextPanel && activeContextMsg?.contextUsed && (
+        <ContextPanel
+          context={activeContextMsg.contextUsed}
+          onClose={() => setActiveContextMsgId(null)}
+        />
+      )}
+
+      {/* ── Plugin config modal ── */}
       {configModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="w-96 rounded-xl border border-neutral-700 bg-neutral-900 p-6 shadow-2xl">
-            <h2 className="mb-1 text-sm font-semibold text-neutral-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div
+            className={cn(
+              "w-96 rounded-xl p-6 shadow-2xl",
+              "border border-[var(--border-default)] bg-[var(--surface-overlay)]",
+            )}
+          >
+            <h2 className="mb-1 text-sm font-semibold text-content-primary">
               {PLUGIN_LABELS[configModal.plugin.name] ?? configModal.plugin.name}
             </h2>
-            <p className="mb-4 text-xs text-neutral-500">{configModal.plugin.description}</p>
+            <p className="mb-5 text-xs text-content-muted">{configModal.plugin.description}</p>
 
             <div className="space-y-3">
               {(PLUGIN_CONFIG_FIELDS[configModal.plugin.name] ?? []).map((field) => (
                 <div key={field.key}>
-                  <label className="block text-xs text-neutral-400 mb-1">{field.label}</label>
+                  <label className="mb-1 block text-xs text-content-secondary">
+                    {field.label}
+                  </label>
                   <input
                     type="text"
                     value={configValues[field.key] ?? ""}
@@ -529,25 +565,31 @@ export function ChatPage() {
                       setConfigValues((prev) => ({ ...prev, [field.key]: e.target.value }))
                     }
                     placeholder={field.placeholder}
-                    className="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-xs text-neutral-100 placeholder-neutral-600 outline-none focus:border-neutral-500"
+                    className={cn(
+                      "w-full rounded-lg border px-3 py-2 text-xs",
+                      "border-[var(--border-default)] bg-[var(--surface-raised)]",
+                      "text-content-primary placeholder:text-content-placeholder",
+                      "outline-none focus:border-[var(--border-accent)]",
+                      "transition-colors",
+                    )}
                   />
                 </div>
               ))}
               {(PLUGIN_CONFIG_FIELDS[configModal.plugin.name] ?? []).length === 0 && (
-                <p className="text-xs text-neutral-500">Nenhuma configuração necessária.</p>
+                <p className="text-xs text-content-muted">Nenhuma configuração necessária.</p>
               )}
             </div>
 
             <div className="mt-5 flex justify-end gap-2">
               <button
                 onClick={() => setConfigModal(null)}
-                className="rounded-md px-4 py-2 text-xs text-neutral-400 hover:text-neutral-200 transition-colors"
+                className="rounded-lg px-4 py-2 text-xs text-content-muted hover:text-content-primary transition-colors"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSavePlugin}
-                className="rounded-md bg-neutral-700 px-4 py-2 text-xs text-neutral-100 hover:bg-neutral-600 transition-colors"
+                className="rounded-lg bg-accent px-4 py-2 text-xs text-white hover:bg-accent-hover transition-colors"
               >
                 Salvar
               </button>
