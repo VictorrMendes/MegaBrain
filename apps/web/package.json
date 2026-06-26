@@ -25,7 +25,6 @@
     "next": "^15.2.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-force-graph-2d": "^1.25.0",
     "tailwind-merge": "^2.0.0"
   },
   "devDependencies": {

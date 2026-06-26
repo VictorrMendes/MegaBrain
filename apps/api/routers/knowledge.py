@@ -53,6 +53,19 @@ class EntityResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RelationResponse(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    source_entity_id: UUID
+    relation: str
+    target_entity_id: UUID
+    confidence: float
+    source_type: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 @router.get("/facts", response_model=list[FactResponse])
 async def list_facts(
     workspace_id: UUID,
@@ -97,6 +110,20 @@ async def list_entities(
     return await engine.list_entities(
         workspace_id=workspace_id,
         entity_type=entity_type,
+        limit=limit,
+    )
+
+
+@router.get("/relations", response_model=list[RelationResponse])
+async def list_relations(
+    workspace_id: UUID,
+    entity_id: UUID | None = None,
+    limit: int = 100,
+    engine: KnowledgeEngine = Depends(get_knowledge_engine),
+):
+    return await engine.list_relations(
+        workspace_id=workspace_id,
+        entity_id=entity_id,
         limit=limit,
     )
 

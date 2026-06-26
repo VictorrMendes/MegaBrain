@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from kernel.events import DomainEventType, KhonshuEvent, event_bus
@@ -130,6 +130,29 @@ class KnowledgeEngine:
     # ------------------------------------------------------------------ #
     # Relations                                                            #
     # ------------------------------------------------------------------ #
+
+    async def list_relations(
+        self,
+        workspace_id: UUID,
+        entity_id: UUID | None = None,
+        limit: int = 100,
+    ) -> list[Relation]:
+        async with self._sessions() as session:
+            q = (
+                select(Relation)
+                .where(Relation.workspace_id == workspace_id)
+                .order_by(Relation.created_at.desc())
+                .limit(limit)
+            )
+            if entity_id:
+                q = q.where(
+                    or_(
+                        Relation.source_entity_id == entity_id,
+                        Relation.target_entity_id == entity_id,
+                    )
+                )
+            result = await session.execute(q)
+            return list(result.scalars())
 
     async def add_relation(
         self,

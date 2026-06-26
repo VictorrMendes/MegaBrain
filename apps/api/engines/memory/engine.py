@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select, text, update
@@ -26,8 +27,18 @@ class MemoryEngine:
         content: str,
         type: MemoryType = MemoryType.long,
         metadata: dict | None = None,
+        confidence: float = 1.0,
+        importance: float = 0.5,
+        source: str | None = None,
+        source_id: UUID | None = None,
+        expires_in_days: int | None = None,
     ) -> Memory:
         embed = await self._embedding.embed(content)
+        expires_at = (
+            datetime.now(UTC) + timedelta(days=expires_in_days)
+            if expires_in_days
+            else None
+        )
 
         async with self._sessions() as session:
             memory = Memory(
@@ -36,6 +47,11 @@ class MemoryEngine:
                 content=content,
                 embedding=embed.embedding,
                 metadata_=metadata or {},
+                confidence=confidence,
+                importance=importance,
+                source=source,
+                source_id=source_id,
+                expires_at=expires_at,
             )
             session.add(memory)
             await session.commit()
@@ -67,8 +83,13 @@ class MemoryEngine:
         embed = await self._embedding.embed(query)
         vector_str = "[" + ",".join(f"{x:.8f}" for x in embed.embedding) + "]"
 
-        type_clause = "AND m.type::text = :type_filter" if type_filter else ""
+        type_clause = (
+            "AND m.type::text = :type_filter" if type_filter else ""
+        )
 
+        # RRF com boost de importância:
+        #   score_final = rrf_score * (0.5 + 0.5 * importance)
+        # Memórias expiradas são excluídas pelo filtro expires_at.
         sql = text(f"""
             WITH bm25 AS (
                 SELECT id,
@@ -77,8 +98,9 @@ class MemoryEngine:
                        ) AS rank
                 FROM memories,
                      plainto_tsquery('portuguese', :query) AS q
-                WHERE workspace_id  = :workspace_id
+                WHERE workspace_id = :workspace_id
                   AND superseded_by IS NULL
+                  AND (expires_at IS NULL OR expires_at > now())
                   AND fts @@ q
                 LIMIT 40
             ),
@@ -88,22 +110,23 @@ class MemoryEngine:
                            ORDER BY embedding <=> CAST(:vector AS vector)
                        ) AS rank
                 FROM memories
-                WHERE workspace_id  = :workspace_id
+                WHERE workspace_id = :workspace_id
                   AND superseded_by IS NULL
+                  AND (expires_at IS NULL OR expires_at > now())
                   AND embedding IS NOT NULL
                 LIMIT 40
             ),
             rrf AS (
                 SELECT COALESCE(b.id, v.id) AS id,
                        COALESCE(1.0 / (60 + b.rank), 0) +
-                       COALESCE(1.0 / (60 + v.rank), 0) AS score
+                       COALESCE(1.0 / (60 + v.rank), 0) AS rrf_score
                 FROM bm25 b FULL OUTER JOIN vec v ON b.id = v.id
             )
             SELECT m.id
             FROM rrf
             JOIN memories m ON m.id = rrf.id
             {type_clause}
-            ORDER BY rrf.score DESC
+            ORDER BY rrf.rrf_score * (0.5 + 0.5 * m.importance) DESC
             LIMIT :limit
         """)
 

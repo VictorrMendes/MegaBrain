@@ -133,6 +133,26 @@ export interface Memory {
   updated_at: string;
 }
 
+export interface KnowledgeEntity {
+  id: string;
+  workspace_id: string;
+  name: string;
+  type: string;
+  aliases: string[];
+  created_at: string;
+}
+
+export interface KnowledgeRelation {
+  id: string;
+  workspace_id: string;
+  source_entity_id: string;
+  relation: string;
+  target_entity_id: string;
+  confidence: number;
+  source_type: string | null;
+  created_at: string;
+}
+
 export interface Fact {
   id: string;
   workspace_id: string;
@@ -513,6 +533,12 @@ export const api = {
   listObservations: (wsId: string, limit = 50) =>
     get<Observation[]>(
       `/workspaces/${wsId}/knowledge/observations?limit=${limit}`
+    ),
+  listEntities: (wsId: string, limit = 100) =>
+    get<KnowledgeEntity[]>(`/workspaces/${wsId}/knowledge/entities?limit=${limit}`),
+  listRelations: (wsId: string, entityId?: string, limit = 200) =>
+    get<KnowledgeRelation[]>(
+      `/workspaces/${wsId}/knowledge/relations?limit=${limit}${entityId ? `&entity_id=${entityId}` : ""}`
     ),
 
   // ── Inbox ─────────────────────────────────────────────────────────────
