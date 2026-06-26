@@ -1,16 +1,18 @@
 import json
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import httpx
 
 from kernel.config import settings
 from kernel.logger import get_logger
+
 from .base import (
     ChatMessage,
-    EmbedResult,
     EmbeddingProvider,
+    EmbedResult,
     GenerateResult,
     LLMProvider,
+    TaskType,
 )
 
 logger = get_logger(__name__)
@@ -22,15 +24,29 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
         base_url: str | None = None,
         model: str | None = None,
         embed_model: str | None = None,
+        task_profiles: dict[str, str] | None = None,
     ):
         self.base_url = (base_url or settings.ollama_base_url).rstrip("/")
         self.model = model or settings.ollama_default_model
         self.embed_model = embed_model or settings.ollama_embedding_model
+        # task_profiles: TaskType.value → model name override
+        # e.g. {"planning": "llama3.1:8b", "summarization": "qwen2.5:3b"}
+        self.task_profiles: dict[str, str] = task_profiles or {}
+
+    def _model_for(self, task_type: TaskType | None) -> str:
+        if task_type and task_type.value in self.task_profiles:
+            return self.task_profiles[task_type.value]
+        return self.model
 
     async def generate(
-        self, prompt: str, system: str | None = None, **kwargs
+        self,
+        prompt: str,
+        system: str | None = None,
+        task_type: TaskType | None = None,
+        **kwargs,
     ) -> GenerateResult:
-        payload: dict = {"model": self.model, "prompt": prompt, "stream": False}
+        model = self._model_for(task_type)
+        payload: dict = {"model": model, "prompt": prompt, "stream": False}
         if system:
             payload["system"] = system
 
@@ -39,17 +55,22 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
             resp.raise_for_status()
             data = resp.json()
 
-        logger.debug("ollama.generate", model=self.model, tokens=data.get("eval_count"))
+        logger.debug("ollama.generate", model=model, tokens=data.get("eval_count"))
         return GenerateResult(
             content=data["response"],
-            model=self.model,
+            model=model,
             tokens_used=data.get("eval_count", 0),
         )
 
     async def stream(
-        self, prompt: str, system: str | None = None, **kwargs
+        self,
+        prompt: str,
+        system: str | None = None,
+        task_type: TaskType | None = None,
+        **kwargs,
     ) -> AsyncIterator[str]:
-        payload: dict = {"model": self.model, "prompt": prompt, "stream": True}
+        model = self._model_for(task_type)
+        payload: dict = {"model": model, "prompt": prompt, "stream": True}
         if system:
             payload["system"] = system
 
@@ -66,10 +87,14 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
                             break
 
     async def chat(
-        self, messages: list[ChatMessage], **kwargs
+        self,
+        messages: list[ChatMessage],
+        task_type: TaskType | None = None,
+        **kwargs,
     ) -> GenerateResult:
+        model = self._model_for(task_type)
         payload = {
-            "model": self.model,
+            "model": model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": False,
             "think": False,
@@ -80,18 +105,22 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
             data = resp.json()
 
         content = data["message"]["content"]
-        logger.debug("ollama.chat", model=self.model, tokens=data.get("eval_count"))
+        logger.debug("ollama.chat", model=model, tokens=data.get("eval_count"))
         return GenerateResult(
             content=content,
-            model=self.model,
+            model=model,
             tokens_used=data.get("eval_count", 0),
         )
 
     async def chat_stream(
-        self, messages: list[ChatMessage], **kwargs
+        self,
+        messages: list[ChatMessage],
+        task_type: TaskType | None = None,
+        **kwargs,
     ) -> AsyncIterator[str]:
+        model = self._model_for(task_type)
         payload = {
-            "model": self.model,
+            "model": model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": True,
             "think": False,

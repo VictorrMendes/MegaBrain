@@ -1,9 +1,23 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from enum import StrEnum
+from typing import Any
 
 from kernel.logger import get_logger
+
+
+class RiskLevel(StrEnum):
+    """Nível de risco de uma Capability — informa PolicyEngine e Planner."""
+
+    low = "low"           # leitura / consulta, sem efeitos colaterais
+    medium = "medium"     # escrita local, reversível
+    high = "high"         # API externa, difícil de reverter
+    critical = "critical" # destruição de dados / infra, irreversível
+
+
+
 
 logger = get_logger(__name__)
 
@@ -24,6 +38,7 @@ class Capability:
 
     The Planner reasons about capabilities by description, not by tool names.
     Example: "who can manage containers?" → matches container_management.
+    See ADR-004 for the full rationale.
     """
 
     name: str               # e.g. "container_management"
@@ -31,6 +46,21 @@ class Capability:
     plugin: str             # which plugin registered this
     tags: list[str] = field(default_factory=list)
     tools: dict[str, CapabilityTool] = field(default_factory=dict)
+
+    # Security and context requirements (checked by PlanValidator — ADR-006)
+    permissions: list[str] = field(default_factory=list)
+    required_context: list[str] = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
+
+    # Reactive contract (documents what this capability consumes/produces)
+    events_consumed: list[str] = field(default_factory=list)
+    events_produced: list[str] = field(default_factory=list)
+
+    # Runtime metadata — informa Planner, PolicyEngine e observabilidade
+    risk_level: RiskLevel = RiskLevel.low
+    estimated_latency_ms: int = 0    # 0 = desconhecido
+    estimated_cost_units: int = 0    # 0 = sem custo
+    side_effects: list[str] = field(default_factory=list)
 
     def register_tool(
         self,
@@ -52,6 +82,14 @@ class Capability:
             "name": self.name,
             "description": self.description,
             "tags": self.tags,
+            "risk_level": self.risk_level.value,
+            "estimated_latency_ms": self.estimated_latency_ms,
+            "estimated_cost_units": self.estimated_cost_units,
+            "side_effects": self.side_effects,
+            "permissions": self.permissions,
+            "required_context": self.required_context,
+            "events_consumed": self.events_consumed,
+            "events_produced": self.events_produced,
             "tools": [
                 {"name": t.name, "description": t.description}
                 for t in self.tools.values()

@@ -18,7 +18,8 @@ logger = get_logger(__name__)
 # Regex simples para resolver variáveis {{ nome }} em templates
 _TEMPLATE_VAR = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
-# Nós AST permitidos em rule expressions — proíbe chamadas, atributos e comprehensions
+# Nós AST permitidos em rule expressions.
+# Proíbe Call, Attribute, comprehensions e imports.
 _SAFE_AST_NODES: frozenset[type] = frozenset({
     _ast.Expression,
     _ast.BoolOp, _ast.And, _ast.Or,
@@ -191,13 +192,15 @@ class SchedulerEngine:
 
         async with self._sessions() as session:
             result = await session.execute(
-                select(SchedulerTrigger).where(
+                select(SchedulerTrigger)
+                .where(
                     SchedulerTrigger.status == TriggerStatus.active,
                     SchedulerTrigger.type.in_([
                         TriggerType.temporal,
                         TriggerType.rule,
                     ]),
                 )
+                .order_by(SchedulerTrigger.priority.desc())
             )
             triggers = list(result.scalars())
 
@@ -370,8 +373,9 @@ def _safe_eval_rule(expression: str, context: dict) -> bool:
 
     for node in _ast.walk(tree):
         if type(node) not in _SAFE_AST_NODES:
+            node_name = type(node).__name__
             raise ValueError(
-                f"Forbidden AST node '{type(node).__name__}' in rule expression"
+                f"Forbidden AST node '{node_name}' in rule expression"
             )
 
     compiled = compile(tree, "<rule>", "eval")
