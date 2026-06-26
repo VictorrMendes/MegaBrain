@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type DashboardSummary } from "@/lib/api";
+import {
+  api,
+  type BriefingResponse,
+  type DashboardSummary,
+  type LifeContextSnapshot,
+} from "@/lib/api";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { cn } from "@/lib/cn";
 import { Badge, type BadgeVariant, Spinner } from "@/components/ui";
@@ -13,13 +18,17 @@ import {
   BookOpenIcon,
   BrainIcon,
   CheckCircle2Icon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   ClockIcon,
   CommandIcon,
+  GlobeIcon,
   InboxIcon,
   MessageSquareIcon,
   PackageIcon,
   PlusIcon,
   RefreshCwIcon,
+  SparklesIcon,
   TargetIcon,
   XCircleIcon,
   ZapIcon,
@@ -80,9 +89,8 @@ function rel(dateStr: string): string {
   return d === 1 ? "ontem" : `${d}d`;
 }
 
-type DashMission  = DashboardSummary["recent_missions"][0];
-type DashHealth   = DashboardSummary["health"][0];
-type FeedKind     = "mission" | "memory" | "fact" | "artifact";
+type DashMission = DashboardSummary["recent_missions"][0];
+type FeedKind    = "mission" | "memory" | "fact" | "artifact";
 
 interface FeedItem {
   id:   string;
@@ -396,6 +404,20 @@ export function DashboardPage() {
             )}
 
             {/* ══════════════════════════════════════════════
+                BRIEFING COGNITIVO — resumo inteligente
+            ═══════════════════════════════════════════════ */}
+            {workspace && (
+              <CognitiveBriefingWidget workspaceId={workspace.id} />
+            )}
+
+            {/* ══════════════════════════════════════════════
+                CONTEXTO DE VIDA — integrações externas
+            ═══════════════════════════════════════════════ */}
+            {workspace && (
+              <LifeContextWidget workspaceId={workspace.id} />
+            )}
+
+            {/* ══════════════════════════════════════════════
                 EM ANDAMENTO — missões ativas
             ═══════════════════════════════════════════════ */}
             <section>
@@ -686,6 +708,137 @@ function EmptySlot({
         {action.label}
       </Link>
     </div>
+  );
+}
+
+function CognitiveBriefingWidget({ workspaceId }: { workspaceId: string }) {
+  const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    api.listBriefings(workspaceId, 1)
+      .then((list) => { if (list.length > 0) setBriefing(list[0]); })
+      .catch(() => {});
+  }, [workspaceId]);
+
+  const generate = async () => {
+    setGenerating(true);
+    try {
+      const b = await api.generateBriefing(workspaceId);
+      setBriefing(b);
+      setExpanded(true);
+    } catch { /* silent */ } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-[var(--border-subtle)] bg-surface-raised p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <SparklesIcon size={11} className="text-content-muted" />
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-content-muted">
+            Briefing Cognitivo
+          </span>
+          {briefing && (
+            <span className="text-[10px] text-content-muted">
+              · {rel(briefing.created_at)}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={generate}
+          disabled={generating}
+          className={cn(
+            "flex items-center gap-1 rounded-md border px-2 py-1 text-xs",
+            "border-[var(--border-subtle)] text-content-secondary",
+            "hover:border-[var(--border-default)] hover:text-content-primary",
+            "hover:bg-surface-overlay transition-colors disabled:opacity-40",
+          )}
+        >
+          <SparklesIcon size={10} className={generating ? "animate-spin" : ""} />
+          {generating ? "Gerando…" : "Gerar"}
+        </button>
+      </div>
+
+      {briefing ? (
+        <div>
+          <p className="text-sm font-medium text-content-primary">
+            {briefing.title}
+          </p>
+          {expanded ? (
+            <>
+              <p className="mt-2 text-xs text-content-secondary whitespace-pre-wrap leading-relaxed">
+                {briefing.content}
+              </p>
+              <button
+                onClick={() => setExpanded(false)}
+                className="mt-2 flex items-center gap-1 text-xs text-content-muted hover:text-content-secondary transition-colors"
+              >
+                <ChevronUpIcon size={11} /> Recolher
+              </button>
+            </>
+          ) : (
+            <p className="mt-1 text-xs text-content-muted">
+              {briefing.content.slice(0, 120)}
+              {briefing.content.length > 120 && (
+                <>
+                  {"… "}
+                  <button
+                    onClick={() => setExpanded(true)}
+                    className="inline-flex items-center gap-0.5 text-accent hover:text-accent-hover transition-colors"
+                  >
+                    <ChevronDownIcon size={10} /> ver mais
+                  </button>
+                </>
+              )}
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="text-xs text-content-muted">
+          Nenhum briefing gerado. Clique em "Gerar" para criar um resumo inteligente do sistema.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function LifeContextWidget({ workspaceId }: { workspaceId: string }) {
+  const [snapshot, setSnapshot] = useState<LifeContextSnapshot | null>(null);
+
+  useEffect(() => {
+    api.getLifeContextSnapshot(workspaceId).then(setSnapshot).catch(() => {});
+  }, [workspaceId]);
+
+  if (!snapshot || snapshot.lines.length === 0) return null;
+
+  return (
+    <section className="rounded-xl border border-[var(--border-subtle)] bg-surface-raised p-4">
+      <div className="mb-3 flex items-center gap-1.5">
+        <GlobeIcon size={11} className="text-content-muted" />
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-content-muted">
+          Contexto de Vida
+        </span>
+        <span className="text-[10px] text-content-muted">
+          · {snapshot.integration_count} integração{snapshot.integration_count !== 1 ? "ões" : ""}
+        </span>
+      </div>
+      <ul className="space-y-1.5">
+        {snapshot.lines.slice(0, 6).map((line, i) => (
+          <li key={i} className="flex items-start gap-1.5 text-xs text-content-secondary">
+            <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-content-muted" />
+            {line}
+          </li>
+        ))}
+        {snapshot.lines.length > 6 && (
+          <li className="text-xs text-content-muted">
+            +{snapshot.lines.length - 6} mais…
+          </li>
+        )}
+      </ul>
+    </section>
   );
 }
 

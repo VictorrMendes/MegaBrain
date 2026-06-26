@@ -419,6 +419,16 @@ export interface LifeContextSnapshot {
   generated_at: string;
 }
 
+export interface BriefingResponse {
+  id: string;
+  workspace_id: string;
+  type: string;
+  title: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
 // Obsidian types
 export interface ObsidianNoteInput {
   path: string;
@@ -706,6 +716,17 @@ export const api = {
     get<SyncRecord[]>(`/integrations/${wsId}/${integrationId}/sync-history?limit=${limit}`),
   getLifeContextSnapshot: (wsId: string) =>
     get<LifeContextSnapshot>(`/integrations/${wsId}/life-context/snapshot`),
+
+  // ── Briefings ─────────────────────────────────────────────────────────
+  generateBriefing: (wsId: string, type = "daily", additionalContext = "") =>
+    post<BriefingResponse>(`/briefings/${wsId}/generate`, {
+      type,
+      additional_context: additionalContext,
+    }),
+  listBriefings: (wsId: string, limit = 10) =>
+    get<BriefingResponse[]>(`/briefings/${wsId}?limit=${limit}`),
+  getBriefing: (wsId: string, briefingId: string) =>
+    get<BriefingResponse>(`/briefings/${wsId}/${briefingId}`),
 
   // ── Obsidian ──────────────────────────────────────────────────────────
   syncObsidian: (wsId: string, notes: ObsidianNoteInput[]) =>

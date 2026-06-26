@@ -17,6 +17,7 @@ from kernel.events import event_bus
 from kernel.logger import get_logger, setup_logging
 from kernel.runtime import runtime
 from routers.artifacts import router as artifacts_router
+from routers.briefings import router as briefings_router
 from routers.integrations import router as integrations_router
 from routers.conversations import router as conversations_router
 from routers.dashboard import router as dashboard_router
@@ -76,6 +77,21 @@ async def lifespan(app: FastAPI):
 
     tick_task = asyncio.create_task(_scheduler_tick_loop())
 
+    # Load workspace IDs for CognitiveLoop
+    try:
+        from sqlalchemy import select
+        from models.workspace import Workspace
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Workspace.id).where(Workspace.is_active == True)  # noqa: E712
+            )
+            ws_ids = list(result.scalars())
+        await runtime.start_background_tasks(ws_ids)
+    except Exception as exc:
+        logger.warning(
+            "api.cognitive_loop_start_failed", error=str(exc)
+        )
+
     logger.info(
         "api.ready",
         workers=[
@@ -83,6 +99,7 @@ async def lifespan(app: FastAPI):
             "task_extractor",
             "summarizer",
             "scheduler_tick",
+            "cognitive_loop",
         ],
     )
     yield
@@ -93,6 +110,7 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
 
+    await runtime.stop_background_tasks()
     await event_bus.disconnect()
     logger.info("api.shutdown")
 
@@ -132,3 +150,4 @@ app.include_router(artifacts_router)
 app.include_router(dashboard_router)
 app.include_router(search_router)
 app.include_router(integrations_router)
+app.include_router(briefings_router)

@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 
 from core.database import AsyncSessionLocal
+from engines.briefing import BriefingEngine
 from engines.inbox import InboxEngine
 from engines.integration import IntegrationManager
+from engines.integration.intelligence import IntegrationIntelligence
 from engines.knowledge import KnowledgeEngine
 from engines.memory import MemoryEngine
 from engines.mission import MissionEngine
@@ -14,25 +16,26 @@ from engines.plugin import PluginEngine
 from engines.prompt import PromptEngine
 from engines.rag import RAGEngine
 from engines.scheduler import SchedulerEngine
+from engines.search import SearchEngine
+from kernel.capabilities.reasoner import CapabilityReasoner
 from kernel.context import ContextBuilder
+from kernel.cognitive_loop import CognitiveLoop
 from kernel.health import ComponentHealth, HealthReport
 from kernel.life_context import LifeContextProvider
 from kernel.logger import get_logger
+from kernel.observability import CognitiveMetrics
 from kernel.providers.ollama import OllamaProvider
 
 logger = get_logger(__name__)
 
 
 class KhonshuRuntime:
-    """Central runtime que possui todos os singletons de engines.
+    """Central runtime holding all engine singletons.
 
-    Substitui as variáveis globais espalhadas em core/dependencies.py.
-    Chame start() uma vez no lifespan; depois acesse engines via
-    propriedades. Armazenado em app.state.runtime após startup.
-
-    Ordem de init segue o grafo de dependências:
-        llm → memory, rag → obsidian, prompt → knowledge → mission
-        → scheduler, inbox
+    Dependency order:
+        reasoner → llm → memory, rag → obsidian, prompt → knowledge
+        → mission → scheduler, inbox → search → integration
+        → life_context → briefing → cognitive_loop → context
     """
 
     def __init__(self) -> None:
@@ -47,17 +50,20 @@ class KhonshuRuntime:
         self._scheduler: SchedulerEngine | None = None
         self._inbox: InboxEngine | None = None
         self._integration: IntegrationManager | None = None
+        self._integration_intel: IntegrationIntelligence | None = None
         self._life_context: LifeContextProvider | None = None
+        self._search: SearchEngine | None = None
+        self._briefing: BriefingEngine | None = None
+        self._cognitive_loop: CognitiveLoop | None = None
         self._context: ContextBuilder | None = None
+        self._reasoner: CapabilityReasoner | None = None
+        self._metrics: CognitiveMetrics | None = None
 
     def start(self) -> None:
-        """Inicializa todas as engines em ordem de dependência.
-
-        Síncrono porque todos os construtores de engine são síncronos
-        (recebem session_factory, não uma conexão ativa).
-        """
         logger.info("runtime.starting")
 
+        self._metrics = CognitiveMetrics()
+        self._reasoner = CapabilityReasoner()
         self._llm = OllamaProvider()
 
         self._memory = MemoryEngine(
@@ -84,7 +90,13 @@ class KhonshuRuntime:
         )
         self._mission = MissionEngine(
             session_factory=AsyncSessionLocal,
-            plan_providers=[LLMPlanProvider(self._llm)],
+            plan_providers=[
+                LLMPlanProvider(
+                    llm_provider=self._llm,
+                    reasoner=self._reasoner,
+                )
+            ],
+            reasoner=self._reasoner,
         )
         self._scheduler = SchedulerEngine(
             session_factory=AsyncSessionLocal,
@@ -93,11 +105,31 @@ class KhonshuRuntime:
             session_factory=AsyncSessionLocal,
             llm_provider=self._llm,
         )
+        self._search = SearchEngine(knowledge_engine=self._knowledge)
         self._integration = IntegrationManager(
             session_factory=AsyncSessionLocal,
         )
+        self._integration_intel = IntegrationIntelligence(
+            mission_engine=self._mission,
+            knowledge_engine=self._knowledge,
+        )
         self._life_context = LifeContextProvider(
             integration_manager=self._integration,
+        )
+        self._briefing = BriefingEngine(
+            session_factory=AsyncSessionLocal,
+            llm_provider=self._llm,
+            life_context_provider=self._life_context,
+            knowledge_engine=self._knowledge,
+            memory_engine=self._memory,
+            mission_engine=self._mission,
+            scheduler_engine=self._scheduler,
+        )
+        self._cognitive_loop = CognitiveLoop(
+            llm_provider=self._llm,
+            mission_engine=self._mission,
+            life_context_provider=self._life_context,
+            knowledge_engine=self._knowledge,
         )
         self._context = ContextBuilder(
             memory_engine=self._memory,
@@ -106,24 +138,37 @@ class KhonshuRuntime:
             life_context=self._life_context,
         )
 
-        # Registrar subscrições de eventos (ADR-008)
+        # Event subscriptions
         self._knowledge.subscribe_to_events()
         self._mission.subscribe_to_events()
         self._inbox.subscribe_to_events()
+        self._integration_intel.subscribe_to_events()
 
         logger.info(
             "runtime.ready",
             engines=[
-                "llm", "memory", "rag", "obsidian", "plugin",
-                "prompt", "knowledge", "mission", "scheduler",
-                "inbox", "integration", "life_context",
+                "reasoner", "llm", "memory", "rag", "obsidian",
+                "plugin", "prompt", "knowledge", "mission",
+                "scheduler", "inbox", "search", "integration",
+                "integration_intel", "life_context", "briefing",
+                "cognitive_loop", "metrics",
             ],
         )
 
-    async def health_report(self) -> HealthReport:
-        """Coleta o health de todos os componentes em paralelo."""
-        assert self._llm is not None, "Runtime not started"
+    async def start_background_tasks(
+        self, workspace_ids: list
+    ) -> None:
+        """Start async background tasks (called after lifespan setup)."""
+        if self._cognitive_loop:
+            self._cognitive_loop.set_workspace_ids(workspace_ids)
+            await self._cognitive_loop.start()
 
+    async def stop_background_tasks(self) -> None:
+        if self._cognitive_loop:
+            await self._cognitive_loop.stop()
+
+    async def health_report(self) -> HealthReport:
+        assert self._llm is not None, "Runtime not started"
         checks: list[ComponentHealth] = list(
             await asyncio.gather(
                 self._mission.health(),
@@ -196,15 +241,45 @@ class KhonshuRuntime:
         return self._integration
 
     @property
+    def integration_intel(self) -> IntegrationIntelligence:
+        assert self._integration_intel is not None, "Runtime not started"
+        return self._integration_intel
+
+    @property
     def life_context(self) -> LifeContextProvider:
         assert self._life_context is not None, "Runtime not started"
         return self._life_context
+
+    @property
+    def search(self) -> SearchEngine:
+        assert self._search is not None, "Runtime not started"
+        return self._search
+
+    @property
+    def briefing(self) -> BriefingEngine:
+        assert self._briefing is not None, "Runtime not started"
+        return self._briefing
+
+    @property
+    def cognitive_loop(self) -> CognitiveLoop:
+        assert self._cognitive_loop is not None, "Runtime not started"
+        return self._cognitive_loop
 
     @property
     def context(self) -> ContextBuilder:
         assert self._context is not None, "Runtime not started"
         return self._context
 
+    @property
+    def reasoner(self) -> CapabilityReasoner:
+        assert self._reasoner is not None, "Runtime not started"
+        return self._reasoner
 
-# Global singleton — start() chamado no lifespan de main.py
+    @property
+    def metrics(self) -> CognitiveMetrics:
+        assert self._metrics is not None, "Runtime not started"
+        return self._metrics
+
+
+# Global singleton — start() called in main.py lifespan
 runtime = KhonshuRuntime()

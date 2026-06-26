@@ -57,3 +57,19 @@ def get_integration_manager():
 
 def get_life_context():
     return runtime.life_context
+
+
+def get_search_engine():
+    return runtime.search
+
+
+def get_briefing_engine():
+    return runtime.briefing
+
+
+def get_capability_reasoner():
+    return runtime.reasoner
+
+
+def get_cognitive_metrics():
+    return runtime.metrics

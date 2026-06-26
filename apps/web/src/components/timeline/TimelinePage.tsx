@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type InboxItem, type Mission, type Memory } from "@/lib/api";
+import {
+  api,
+  type BriefingResponse,
+  type InboxItem,
+  type Memory,
+  type Mission,
+} from "@/lib/api";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { cn } from "@/lib/cn";
 import { Badge, type BadgeVariant, Spinner } from "@/components/ui";
@@ -11,6 +17,7 @@ import {
   BrainIcon,
   InboxIcon,
   RefreshCwIcon,
+  SparklesIcon,
   TargetIcon,
 } from "lucide-react";
 
@@ -18,7 +25,7 @@ import {
 // Types
 // ─────────────────────────────────────────────────────────────
 
-type EventKind = "inbox" | "mission" | "memory";
+type EventKind = "inbox" | "mission" | "memory" | "briefing";
 
 interface TimelineEvent {
   id:     string;
@@ -69,27 +76,31 @@ const STATUS_BADGE: Record<string, BadgeVariant> = {
 };
 
 const KIND_ICON: Record<EventKind, React.ReactNode> = {
-  inbox:   <InboxIcon   size={13} />,
-  mission: <TargetIcon  size={13} />,
-  memory:  <BrainIcon   size={13} />,
+  inbox:    <InboxIcon    size={13} />,
+  mission:  <TargetIcon   size={13} />,
+  memory:   <BrainIcon    size={13} />,
+  briefing: <SparklesIcon size={13} />,
 };
 
 const KIND_ACCENT: Record<EventKind, string> = {
-  inbox:   "text-status-info",
-  mission: "text-status-active",
-  memory:  "text-status-success",
+  inbox:    "text-status-info",
+  mission:  "text-status-active",
+  memory:   "text-status-success",
+  briefing: "text-accent",
 };
 
 const KIND_DOT: Record<EventKind, string> = {
-  inbox:   "bg-status-info",
-  mission: "bg-accent",
-  memory:  "bg-status-success",
+  inbox:    "bg-status-info",
+  mission:  "bg-accent",
+  memory:   "bg-status-success",
+  briefing: "bg-accent",
 };
 
 const KIND_LABEL: Record<EventKind, string> = {
-  inbox:   "Inbox",
-  mission: "Missão",
-  memory:  "Memória",
+  inbox:    "Inbox",
+  mission:  "Missão",
+  memory:   "Memória",
+  briefing: "Briefing",
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -107,20 +118,22 @@ export function TimelinePage() {
     if (!workspace) return;
     setLoading(true);
     try {
-      const [inbox, missions, memories] = await Promise.allSettled([
+      const [inbox, missions, memories, briefings] = await Promise.allSettled([
         api.listInbox(workspace.id),
         api.listMissions(workspace.id),
         api.listMemories(workspace.id, 100),
+        api.listBriefings(workspace.id, 30),
       ]);
 
       const evts: TimelineEvent[] = [];
 
       if (inbox.status === "fulfilled") {
         for (const item of inbox.value as InboxItem[]) {
+          const raw = item.raw_content;
           evts.push({
             id:          `inbox-${item.id}`,
             kind:        "inbox",
-            title:       item.title ?? item.raw_content.slice(0, 70) + (item.raw_content.length > 70 ? "…" : ""),
+            title:       item.title ?? raw.slice(0, 70) + (raw.length > 70 ? "…" : ""),
             sub:         `${item.source} · ${item.type}`,
             badge:       item.status,
             badgeVariant: STATUS_BADGE[item.status] ?? "default",
@@ -158,6 +171,21 @@ export function TimelinePage() {
         }
       }
 
+      if (briefings.status === "fulfilled") {
+        for (const b of briefings.value as BriefingResponse[]) {
+          evts.push({
+            id:          `briefing-${b.id}`,
+            kind:        "briefing",
+            title:       b.title,
+            sub:         `briefing ${b.type}`,
+            badge:       b.type,
+            badgeVariant: "info",
+            href:        "/",
+            ts:          new Date(b.created_at),
+          });
+        }
+      }
+
       evts.sort((a, b) => b.ts.getTime() - a.ts.getTime());
       setEvents(evts);
       setLastRefresh(new Date());
@@ -173,7 +201,7 @@ export function TimelinePage() {
   // ─── derived ───
   const counts = events.reduce<Record<EventKind | "all", number>>(
     (acc, e) => { acc[e.kind]++; acc.all++; return acc; },
-    { all: 0, inbox: 0, mission: 0, memory: 0 },
+    { all: 0, inbox: 0, mission: 0, memory: 0, briefing: 0 },
   );
 
   const visible = filter === "all" ? events : events.filter((e) => e.kind === filter);
@@ -227,7 +255,7 @@ export function TimelinePage() {
           >
             Todos
           </FilterChip>
-          {(["inbox", "mission", "memory"] as EventKind[]).map((k) => (
+          {(["inbox", "mission", "memory", "briefing"] as EventKind[]).map((k) => (
             <FilterChip
               key={k}
               active={filter === k}

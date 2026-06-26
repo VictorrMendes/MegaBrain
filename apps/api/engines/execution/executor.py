@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -13,21 +13,19 @@ from kernel.events import DomainEventType
 from kernel.logger import get_logger
 from models.mission import MissionStep, StepStatus
 
+if TYPE_CHECKING:
+    from kernel.capabilities.reasoner import CapabilityReasoner
+
 logger = get_logger(__name__)
 
-# Callable que publica um evento de domínio.
-# Assinatura: (event_type: str, payload: dict) -> Awaitable[None]
+# (event_type: str, payload: dict) -> Awaitable[None]
 PublishFn = Callable[[str, dict], Awaitable[None]]
 
-# Regex para resolução de variáveis {{ nome }} no input dos steps
 _VAR_RE = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
 
 
 def _resolve(value: Any, context: dict) -> Any:
-    """Substitui {{ chave }} recursivamente em strings, dicts e listas.
-
-    Suporta acesso aninhado com ponto: {{ step_0.url }}.
-    """
+    """Resolve {{ key }} templates recursively in strings, dicts, lists."""
     if isinstance(value, str):
         def _replace(match: re.Match) -> str:
             key_path = match.group(1).split(".")
@@ -46,26 +44,31 @@ def _resolve(value: Any, context: dict) -> Any:
     return value
 
 
+def _cap_name(tool_name: str) -> str:
+    """Extract capability name from 'capability.tool' tool name."""
+    return tool_name.split(".")[0]
+
+
 class StepExecutor:
-    """Executa um MissionStep dentro de um ExecutionContext.
+    """Executes a MissionStep within an ExecutionContext.
 
-    Responsabilidades:
-    - Resolução de variáveis {{ }} no input do step a partir do contexto.
-    - Lookup da tool no CapabilityRegistry.
-    - Execução da tool.
-    - Atualização do status do step no banco (RUNNING → SUCCEEDED | FAILED).
-    - Publicação de eventos STEP_STARTED, STEP_COMPLETED, STEP_FAILED.
-    - Retorno de StepResult para o chamador (MissionEngine) decidir o próximo passo.
-
-    O StepExecutor não toma decisões sobre o fluxo da missão (retry, abort, skip).
-    Essas decisões pertencem ao MissionEngine que interpreta o StepResult.
+    Responsibilities:
+    - Resolve {{ }} template variables from accumulated step context.
+    - Look up the tool in CapabilityRegistry.
+    - Execute the tool function.
+    - Persist step status transitions (RUNNING → SUCCEEDED | FAILED).
+    - Publish STEP_STARTED, STEP_COMPLETED, STEP_FAILED events.
+    - Notify CapabilityReasoner of success/failure for future planning.
+    - Return StepResult; MissionEngine decides what to do on failure.
     """
 
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
+        reasoner: CapabilityReasoner | None = None,
     ) -> None:
         self._sessions = session_factory
+        self._reasoner = reasoner
 
     async def run(
         self,
@@ -73,12 +76,8 @@ class StepExecutor:
         context: ExecutionContext,
         publish_fn: PublishFn | None = None,
     ) -> StepResult:
-        """Executa o step e retorna o resultado.
-
-        O chamador é responsável por decidir o que fazer em caso de falha
-        (StepResult.success == False) baseado na failure_policy do step.
-        """
         step_key = f"step_{step.order}"
+        cap_name = _cap_name(step.tool)
 
         await self._set_running(step)
 
@@ -86,10 +85,13 @@ class StepExecutor:
             await _safe_publish(
                 publish_fn,
                 DomainEventType.MISSION_STEP_STARTED,
-                {"step_id": str(step.id), "tool": step.tool, "order": step.order},
+                {
+                    "step_id": str(step.id),
+                    "tool": step.tool,
+                    "order": step.order,
+                },
             )
 
-        # Resolve variáveis {{ }} no input do step a partir do contexto acumulado
         resolve_ctx = context.as_resolve_context()
         resolved_input: dict = _resolve(step.input or {}, resolve_ctx)
 
@@ -103,15 +105,27 @@ class StepExecutor:
 
         tool = capability_registry.get_tool(step.tool)
         if tool is None:
-            error = f"Tool '{step.tool}' not registered in CapabilityRegistry"
+            error = (
+                f"Tool '{step.tool}' not registered in CapabilityRegistry"
+            )
             await self._set_failed(step, error)
+            if self._reasoner:
+                self._reasoner.record_failure(cap_name)
             if publish_fn:
                 await _safe_publish(
                     publish_fn,
                     DomainEventType.MISSION_STEP_FAILED,
-                    {"step_id": str(step.id), "tool": step.tool, "error": error},
+                    {
+                        "step_id": str(step.id),
+                        "tool": step.tool,
+                        "error": error,
+                    },
                 )
-            logger.warning("step.tool_not_found", step_id=str(step.id), tool=step.tool)
+            logger.warning(
+                "step.tool_not_found",
+                step_id=str(step.id),
+                tool=step.tool,
+            )
             return StepResult(success=False, error=error)
 
         try:
@@ -120,11 +134,17 @@ class StepExecutor:
         except Exception as exc:
             error = str(exc)
             await self._set_failed(step, error)
+            if self._reasoner:
+                self._reasoner.record_failure(cap_name)
             if publish_fn:
                 await _safe_publish(
                     publish_fn,
                     DomainEventType.MISSION_STEP_FAILED,
-                    {"step_id": str(step.id), "tool": step.tool, "error": error},
+                    {
+                        "step_id": str(step.id),
+                        "tool": step.tool,
+                        "error": error,
+                    },
                 )
             logger.warning(
                 "step.execution_failed",
@@ -135,12 +155,18 @@ class StepExecutor:
             return StepResult(success=False, error=error)
 
         await self._set_succeeded(step, output)
+        if self._reasoner:
+            self._reasoner.record_success(cap_name)
 
         if publish_fn:
             await _safe_publish(
                 publish_fn,
                 DomainEventType.MISSION_STEP_COMPLETED,
-                {"step_id": str(step.id), "tool": step.tool, "order": step.order},
+                {
+                    "step_id": str(step.id),
+                    "tool": step.tool,
+                    "order": step.order,
+                },
             )
 
         logger.info(
@@ -162,7 +188,9 @@ class StepExecutor:
             s.started_at = datetime.now(UTC)
             await session.commit()
 
-    async def _set_succeeded(self, step: MissionStep, output: dict) -> None:
+    async def _set_succeeded(
+        self, step: MissionStep, output: dict
+    ) -> None:
         async with self._sessions() as session:
             s = await session.get(MissionStep, step.id)
             s.status = StepStatus.SUCCEEDED
@@ -186,5 +214,7 @@ async def _safe_publish(
         await publish_fn(event_type, payload)
     except Exception as exc:
         logger.warning(
-            "step.publish_failed", event_type=event_type, error=str(exc)
+            "step.publish_failed",
+            event_type=event_type,
+            error=str(exc),
         )

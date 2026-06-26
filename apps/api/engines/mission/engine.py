@@ -50,10 +50,13 @@ class MissionEngine:
         self,
         session_factory: async_sessionmaker[AsyncSession],
         plan_providers: list[PlanProvider] | None = None,
+        reasoner=None,
     ) -> None:
         self._sessions = session_factory
         self._providers: list[PlanProvider] = plan_providers or []
-        self._executor = StepExecutor(session_factory=session_factory)
+        self._executor = StepExecutor(
+            session_factory=session_factory, reasoner=reasoner
+        )
 
     # ------------------------------------------------------------------ #
     # Public API                                                           #

@@ -14,6 +14,7 @@ from .mission import (
     StepType,
 )
 from .obsidian import ObsidianLink, ObsidianNote
+from .briefing import Briefing
 from .integration import ConnectedAccount, Integration, SyncRecord
 from .workspace import Workspace
 from .workspace_plugin import WorkspacePlugin
@@ -21,6 +22,7 @@ from .workspace_plugin import WorkspacePlugin
 __all__ = [
     "Base",
     "Workspace",
+    "Briefing",
     "Integration",
     "ConnectedAccount",
     "SyncRecord",
