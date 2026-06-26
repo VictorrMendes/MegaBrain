@@ -129,8 +129,9 @@ export interface Memory {
   content: string;
   source: string | null;
   importance: number;
+  confidence: number;
+  expires_at: string | null;
   created_at: string;
-  updated_at: string;
 }
 
 export interface KnowledgeEntity {
@@ -526,6 +527,8 @@ export const api = {
     get<Memory[]>(`/workspaces/${wsId}/memories?limit=${limit}`),
   recallMemories: (wsId: string, query: string) =>
     get<Memory[]>(`/workspaces/${wsId}/memories/recall?q=${encodeURIComponent(query)}`),
+  createMemory: (wsId: string, data: { content: string; type?: string; importance?: number }) =>
+    post<Memory>(`/workspaces/${wsId}/memories`, data),
 
   // ── Knowledge ─────────────────────────────────────────────────────────
   listFacts: (wsId: string, limit = 50) =>

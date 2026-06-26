@@ -24,6 +24,8 @@ async def create_memory(
         content=data.content,
         type=data.type,
         metadata=data.metadata,
+        importance=data.importance,
+        source="user_explicit",
     )
 
 

@@ -10,6 +10,7 @@ class MemoryCreate(BaseModel):
     content: str
     type: MemoryType = MemoryType.long
     metadata: dict = {}
+    importance: float = 0.5
 
 
 class MemorySupersede(BaseModel):
@@ -24,6 +25,10 @@ class MemoryResponse(BaseModel):
     content: str
     metadata_: dict
     superseded_by: UUID | None
+    confidence: float
+    importance: float
+    source: str | None
+    expires_at: datetime | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
