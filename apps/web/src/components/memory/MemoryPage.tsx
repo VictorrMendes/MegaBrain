@@ -1,133 +1,313 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, type Memory } from "@/lib/api";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { cn } from "@/lib/cn";
-import { BrainIcon, LoaderIcon, SearchIcon } from "lucide-react";
+import { Badge, type BadgeVariant, Spinner } from "@/components/ui";
+import {
+  ArrowDownUpIcon,
+  BrainIcon,
+  SearchIcon,
+  XIcon,
+} from "lucide-react";
 
-const TYPE_COLOR: Record<string, string> = {
-  semantic:    "bg-violet-950 text-violet-400",
-  episodic:    "bg-blue-950 text-blue-400",
-  procedural:  "bg-cyan-950 text-cyan-400",
-  declarative: "bg-emerald-950 text-emerald-400",
+// ─────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────
+
+const TYPE_BADGE: Record<string, BadgeVariant> = {
+  semantic:    "active",
+  episodic:    "info",
+  procedural:  "default",
+  declarative: "success",
 };
 
-function formatDate(s: string) {
-  return new Date(s).toLocaleString("pt-BR", {
-    day: "2-digit", month: "2-digit", year: "2-digit",
-    hour: "2-digit", minute: "2-digit",
-  });
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
+
+function rel(s: string): string {
+  const diff = Date.now() - new Date(s).getTime();
+  const m = Math.floor(diff / 60_000);
+  if (m < 1)  return "agora";
+  if (m < 60) return `${m}m atrás`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `há ${h}h`;
+  return `há ${Math.floor(h / 24)}d`;
 }
+
+// ─────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────
 
 export function MemoryPage() {
   const { current: workspace, loading: wsLoading } = useWorkspace();
-  const [memories, setMemories] = useState<Memory[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
+  const [allMemories,  setAllMemories]  = useState<Memory[]>([]);
+  const [memories,     setMemories]     = useState<Memory[]>([]);
+  const [loading,      setLoading]      = useState(false);
+  const [query,        setQuery]        = useState("");
+  const [searching,    setSearching]    = useState(false);
+  const [isRecall,     setIsRecall]     = useState(false);
+  const [typeFilter,   setTypeFilter]   = useState<string>("all");
+  const [sortBy,       setSortBy]       = useState<"importance" | "date">("importance");
 
+  // ─── load ───
   useEffect(() => {
     if (!workspace) return;
     setLoading(true);
-    api.listMemories(workspace.id)
-      .then(setMemories)
+    api.listMemories(workspace.id, 200)
+      .then((mems) => { setAllMemories(mems); setMemories(mems); })
       .finally(() => setLoading(false));
   }, [workspace?.id]);
 
+  // ─── semantic recall ───
   async function recall() {
     if (!workspace || !query.trim()) return;
     setSearching(true);
+    setIsRecall(true);
     try {
       const results = await api.recallMemories(workspace.id, query);
       setMemories(results);
+      setTypeFilter("all");
     } finally {
       setSearching(false);
     }
   }
 
-  async function resetList() {
+  async function reset() {
     if (!workspace) return;
     setSearching(true);
     setQuery("");
+    setIsRecall(false);
     try {
-      const mems = await api.listMemories(workspace.id);
+      const mems = await api.listMemories(workspace.id, 200);
+      setAllMemories(mems);
       setMemories(mems);
     } finally {
       setSearching(false);
     }
   }
 
-  const grouped = memories.reduce<Record<string, Memory[]>>((acc, m) => {
-    const key = m.type || "outros";
-    (acc[key] ??= []).push(m);
-    return acc;
-  }, {});
+  // ─── derived ───
+  const allTypes = useMemo(
+    () => [...new Set(allMemories.map((m) => m.type))].sort(),
+    [allMemories],
+  );
 
+  const filtered = useMemo(() => {
+    let list = typeFilter === "all" ? memories : memories.filter((m) => m.type === typeFilter);
+    list = [...list];
+    if (sortBy === "importance") list.sort((a, b) => b.importance - a.importance);
+    else list.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+    return list;
+  }, [memories, typeFilter, sortBy]);
+
+  const avgImportance = allMemories.length > 0
+    ? Math.round(allMemories.reduce((s, m) => s + m.importance, 0) / allMemories.length * 100)
+    : 0;
+
+  // ─── loading ───
   if (wsLoading || loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoaderIcon size={20} className="animate-spin text-neutral-500" />
+        <Spinner size="md" />
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="mx-auto max-w-3xl">
-        {/* Header */}
-        <div className="mb-4 flex items-center gap-2">
-          <BrainIcon size={15} className="text-neutral-400" />
-          <h1 className="text-sm font-semibold text-neutral-300">Memórias</h1>
-          <span className="ml-auto text-xs text-neutral-600">{memories.length} registros</span>
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-2xl px-6 py-8">
+
+        {/* ── Header ── */}
+        <div className="mb-6 flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <BrainIcon size={14} className="text-content-muted" />
+              <h1 className="text-md font-semibold text-content-primary">Memórias</h1>
+            </div>
+            <p className="text-xs text-content-muted">
+              {allMemories.length} registros · importância média {avgImportance}%
+            </p>
+          </div>
+
+          {/* Sort toggle */}
+          <button
+            onClick={() => setSortBy((v) => v === "importance" ? "date" : "importance")}
+            className={cn(
+              "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs",
+              "border border-[var(--border-default)] text-content-secondary",
+              "hover:border-[var(--border-strong)] hover:text-content-primary transition-colors",
+            )}
+          >
+            <ArrowDownUpIcon size={12} />
+            {sortBy === "importance" ? "Por importância" : "Por data"}
+          </button>
         </div>
 
-        {/* Search */}
-        <div className="mb-6 flex gap-2">
+        {/* ── Recall search ── */}
+        <div className="mb-5 flex gap-2">
           <div className="relative flex-1">
-            <SearchIcon size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600" />
+            <SearchIcon size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-content-muted" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && recall()}
-              placeholder="Buscar por relevância semântica…"
-              className="w-full rounded-lg border border-neutral-800 bg-neutral-900 py-2 pl-8 pr-3 text-xs text-neutral-200 placeholder:text-neutral-600 focus:outline-none focus:border-neutral-700"
+              placeholder="Busca semântica por relevância…"
+              className={cn(
+                "w-full rounded-lg border py-2 pl-9 pr-3 text-sm",
+                "border-[var(--border-default)] bg-[var(--surface-raised)]",
+                "text-content-primary placeholder:text-content-placeholder",
+                "focus:outline-none focus:border-[var(--border-accent)]",
+                "transition-colors",
+              )}
             />
           </div>
-          <button
-            onClick={query.trim() ? recall : resetList}
-            disabled={searching}
-            className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
-          >
-            {searching ? <LoaderIcon size={13} className="animate-spin" /> : query.trim() ? "Buscar" : "Resetar"}
-          </button>
+          {query.trim() ? (
+            <button
+              onClick={recall}
+              disabled={searching}
+              className={cn(
+                "rounded-lg border px-3 py-2 text-sm",
+                "border-accent bg-accent-dim text-accent",
+                "hover:bg-accent-subtle transition-colors disabled:opacity-40",
+              )}
+            >
+              {searching ? <Spinner size="sm" className="text-accent" /> : "Buscar"}
+            </button>
+          ) : isRecall ? (
+            <button
+              onClick={reset}
+              disabled={searching}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm",
+                "border-[var(--border-default)] text-content-secondary",
+                "hover:border-[var(--border-strong)] transition-colors disabled:opacity-40",
+              )}
+            >
+              <XIcon size={13} /> Limpar
+            </button>
+          ) : null}
         </div>
 
-        {memories.length === 0 ? (
-          <p className="text-center text-xs text-neutral-600 py-10">Nenhuma memória encontrada.</p>
-        ) : (
-          Object.entries(grouped).map(([type, items]) => (
-            <div key={type} className="mb-6">
-              <h2 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-neutral-500">
-                <span className={cn("rounded px-1.5 py-0.5 text-[10px]", TYPE_COLOR[type] ?? "bg-neutral-800 text-neutral-500")}>{type}</span>
-                <span>{items.length}</span>
-              </h2>
-              <div className="space-y-2">
-                {items.map((m) => (
-                  <div key={m.id} className="rounded-lg border border-neutral-800 p-3">
-                    <p className="text-xs text-neutral-200">{m.content}</p>
-                    <div className="mt-2 flex items-center gap-3 text-[10px] text-neutral-600">
-                      {m.source && <span>fonte: {m.source}</span>}
-                      <span>importância: {(m.importance * 100).toFixed(0)}%</span>
-                      <span className="ml-auto">{formatDate(m.created_at)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))
+        {/* ── Recall context banner ── */}
+        {isRecall && (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-accent-subtle bg-accent-subtle px-3 py-2">
+            <span className="text-xs text-accent">
+              Mostrando {filtered.length} memórias relevantes para "{query}"
+            </span>
+            <button onClick={reset} className="ml-auto text-content-muted hover:text-content-secondary">
+              <XIcon size={12} />
+            </button>
+          </div>
         )}
+
+        {/* ── Type filter chips ── */}
+        {!isRecall && allTypes.length > 1 && (
+          <div className="mb-5 flex flex-wrap gap-1.5">
+            <TypeChip active={typeFilter === "all"} onClick={() => setTypeFilter("all")}>
+              Todos <span className="text-content-muted">({allMemories.length})</span>
+            </TypeChip>
+            {allTypes.map((t) => (
+              <TypeChip key={t} active={typeFilter === t} onClick={() => setTypeFilter(t)}>
+                {t}
+                <span className="text-content-muted">
+                  ({allMemories.filter((m) => m.type === t).length})
+                </span>
+              </TypeChip>
+            ))}
+          </div>
+        )}
+
+        {/* ── Memory list ── */}
+        {filtered.length === 0 ? (
+          <p className="py-16 text-center text-sm text-content-muted">
+            Nenhuma memória encontrada.
+          </p>
+        ) : (
+          <div className="space-y-2 animate-fade-in">
+            {filtered.map((m) => (
+              <MemoryCard key={m.id} memory={m} />
+            ))}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────────────────────
+
+function TypeChip({
+  active, onClick, children,
+}: {
+  active:   boolean;
+  onClick:  () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium",
+        "border transition-colors",
+        active
+          ? "border-accent-subtle bg-accent-dim text-accent"
+          : "border-[var(--border-subtle)] text-content-secondary hover:border-[var(--border-default)] hover:text-content-primary",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MemoryCard({ memory: m }: { memory: Memory }) {
+  const pct    = Math.round(m.importance * 100);
+  const variant = TYPE_BADGE[m.type] ?? "default";
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-raised)]",
+        "p-4 transition-colors hover:border-[var(--border-default)]",
+      )}
+    >
+      {/* Content */}
+      <p className="text-sm text-content-primary leading-relaxed">{m.content}</p>
+
+      {/* Importance bar */}
+      <div className="mt-3 flex items-center gap-2">
+        <div className="flex-1 h-1 rounded-full bg-[var(--surface-subtle)] overflow-hidden">
+          <div
+            className={cn(
+              "h-full rounded-full transition-all",
+              pct >= 80 ? "bg-status-error" :
+              pct >= 60 ? "bg-status-warning" :
+              pct >= 40 ? "bg-status-success" :
+              "bg-content-muted",
+            )}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <span className="text-[11px] text-content-muted tabular-nums w-7 text-right">
+          {pct}%
+        </span>
+      </div>
+
+      {/* Meta */}
+      <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+        <Badge variant={variant} size="sm">{m.type}</Badge>
+        {m.source && (
+          <span className="text-[11px] text-content-muted">{m.source}</span>
+        )}
+        <span className="ml-auto text-[11px] text-content-muted">
+          {rel(m.updated_at)}
+        </span>
       </div>
     </div>
   );
