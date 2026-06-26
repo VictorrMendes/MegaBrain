@@ -10,6 +10,7 @@ class SearchResult(BaseModel):
     excerpt: str
     workspace_id: str
     href: str
+    score: float = 1.0
 
 
 class SearchResponse(BaseModel):

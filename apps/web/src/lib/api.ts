@@ -330,6 +330,7 @@ export interface SearchResult {
   excerpt: string;
   workspace_id: string;
   href: string;
+  score: number;
 }
 
 export interface SearchResponse {
