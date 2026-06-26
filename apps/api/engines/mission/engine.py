@@ -1,16 +1,21 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from engines.execution import ExecutionContext, StepExecutor
 from engines.plan.provider import PlanProvider, PlanProviderError
+from engines.plan.validator import PlanValidator
 from kernel.capabilities import capability_registry
-from kernel.events import EventType, KhonshuEvent, event_bus
+from kernel.events import DomainEventType, KhonshuEvent, event_bus
 from kernel.logger import get_logger
 from models.mission import (
+    ExecutionPlan,
+    ExecutionPlanStatus,
+    FailurePolicy,
     Mission,
     MissionArtifact,
     MissionContext,
@@ -24,6 +29,7 @@ from models.mission import (
 logger = get_logger(__name__)
 
 _MAX_RETRIES = 3
+_validator = PlanValidator()
 
 
 class MissionError(Exception):
@@ -34,6 +40,10 @@ class InvalidTransitionError(MissionError):
     pass
 
 
+class PlanValidationError(MissionError):
+    pass
+
+
 class MissionEngine:
     def __init__(
         self,
@@ -41,8 +51,8 @@ class MissionEngine:
         plan_providers: list[PlanProvider] | None = None,
     ) -> None:
         self._sessions = session_factory
-        # providers are tried in order; first success wins
         self._providers: list[PlanProvider] = plan_providers or []
+        self._executor = StepExecutor(session_factory=session_factory)
 
     # ------------------------------------------------------------------ #
     # Public API                                                           #
@@ -89,7 +99,7 @@ class MissionEngine:
         )
 
         await self._publish(
-            event_type=EventType.MISSION_CREATED,
+            event_type=DomainEventType.MISSION_CREATED,
             mission=mission,
             payload={"intent": intent, "trigger": trigger.value},
             correlation_id=correlation_id,
@@ -105,39 +115,107 @@ class MissionEngine:
         await self._transition(mission, MissionStatus.PLANNING)
 
         await self._publish(
-            EventType.MISSION_PLANNING, mission, {"provider": provider_name}
+            DomainEventType.MISSION_PLANNING,
+            mission,
+            {"provider": provider_name},
         )
 
         provider = self._select_provider(provider_name)
         if provider is None:
-            await self._fail(
-                mission, "No plan provider available"
-            )
+            await self._fail(mission, "No plan provider available")
             raise MissionError("No plan provider configured")
+
+        # Determine the next version number for this mission's plans
+        async with self._sessions() as session:
+            result = await session.execute(
+                select(func.count()).select_from(ExecutionPlan).where(
+                    ExecutionPlan.mission_id == mission_id
+                )
+            )
+            plan_count = result.scalar() or 0
+
+        # Create draft ExecutionPlan before generating steps
+        async with self._sessions() as session:
+            plan = ExecutionPlan(
+                mission_id=mission_id,
+                version=plan_count + 1,
+                planner=provider.name,
+                status=ExecutionPlanStatus.DRAFT,
+            )
+            session.add(plan)
+            await session.commit()
+            await session.refresh(plan)
+        plan_id = plan.id
 
         try:
             steps = await provider.create_execution_plan(mission)
         except PlanProviderError as exc:
+            async with self._sessions() as session:
+                p = await session.get(ExecutionPlan, plan_id)
+                p.status = ExecutionPlanStatus.FAILED
+                await session.commit()
             await self._fail(mission, str(exc))
             raise MissionError(f"Planning failed: {exc}") from exc
 
+        # Assign steps to the execution plan
+        for step in steps:
+            step.mission_id = mission_id
+            step.execution_plan_id = plan_id
+
+        # Validate before persisting or requesting approval
+        validation = _validator.validate(
+            steps=steps,
+            mission=mission,
+            registry=capability_registry,
+        )
+
         async with self._sessions() as session:
-            for step in steps:
-                session.add(step)
-            await session.commit()
+            p = await session.get(ExecutionPlan, plan_id)
+            p.validation_errors = (
+                validation.to_dict() if not validation.valid else None
+            )
+
+            if not validation.valid:
+                p.status = ExecutionPlanStatus.FAILED
+                await session.commit()
+
+            else:
+                p.status = ExecutionPlanStatus.VALIDATED
+                for step in steps:
+                    session.add(step)
+                await session.commit()
+
+        if not validation.valid:
+            error_summary = "; ".join(
+                e.message for e in validation.errors
+            )
+            await self._publish(
+                DomainEventType.MISSION_PLAN_VALIDATION_FAILED,
+                mission,
+                {
+                    "plan_id": str(plan_id),
+                    "errors": error_summary,
+                },
+            )
+            await self._fail(
+                mission,
+                f"Plan validation failed: {error_summary}",
+            )
+            raise PlanValidationError(
+                f"Plan validation failed: {error_summary}"
+            )
 
         async with self._sessions() as session:
             m = await session.get(Mission, mission_id)
             m.planner = provider.name
-            m.updated_at = datetime.now(timezone.utc)
-
-            next_status = (
-                MissionStatus.WAITING_APPROVAL
-                if m.requires_approval
-                else MissionStatus.READY
-            )
+            m.updated_at = datetime.now(UTC)
             await session.commit()
 
+        next_status = (
+            MissionStatus.WAITING_APPROVAL
+            if mission.requires_approval
+            else MissionStatus.READY
+        )
         return await self._transition(
             await self._get(mission_id), next_status
         )
@@ -154,30 +232,76 @@ class MissionEngine:
     async def run(self, mission_id: UUID) -> Mission:
         mission = await self._get(mission_id)
         mission = await self._transition(mission, MissionStatus.RUNNING)
+        await self._publish(DomainEventType.MISSION_RUNNING, mission, {})
 
-        await self._publish(EventType.MISSION_RUNNING, mission, {})
+        context = await self._build_context(mission)
 
         async with self._sessions() as session:
-            result = await session.execute(
+            rows = await session.execute(
                 select(MissionStep)
                 .where(MissionStep.mission_id == mission_id)
                 .order_by(MissionStep.order)
             )
-            steps = list(result.scalars())
+            steps = list(rows.scalars())
 
         for step in steps:
-            if step.status == StepStatus.SUCCEEDED:
+            if step.status in (StepStatus.SUCCEEDED, StepStatus.SKIPPED):
                 continue
-            try:
-                await self._execute_step(mission, step)
-            except Exception as exc:
-                if step.retry_count < _MAX_RETRIES:
-                    await self._retry_step(mission, step)
-                else:
-                    await self._fail(mission, f"Step {step.tool} failed: {exc}")
-                    raise MissionError(
-                        f"Mission failed at step {step.tool}"
-                    ) from exc
+
+            async def _pub(et: str, p: dict, _m: Mission = mission) -> None:
+                await self._publish(et, _m, p)
+
+            step_result = await self._executor.run(step, context, _pub)
+
+            if step_result.success:
+                context.record_output(step.order, step_result.output)
+                continue
+
+            policy = step.failure_policy
+
+            if policy in (FailurePolicy.skip, FailurePolicy.ignore):
+                await self._mark_skipped(step)
+                context.record_output(step.order, {})
+                continue
+
+            if policy == FailurePolicy.abort:
+                await self._fail(
+                    mission,
+                    f"Step '{step.tool}' aborted: {step_result.error}",
+                )
+                raise MissionError(f"Mission aborted at step '{step.tool}'")
+
+            # FailurePolicy.retry (default)
+            if step.retry_count >= _MAX_RETRIES:
+                await self._fail(
+                    mission,
+                    f"Step '{step.tool}' exhausted {_MAX_RETRIES} retries: "
+                    f"{step_result.error}",
+                )
+                raise MissionError(f"Mission failed at step '{step.tool}'")
+
+            # One retry cycle: RUNNING → RETRYING → RUNNING
+            mission = await self._transition(mission, MissionStatus.RETRYING)
+            async with self._sessions() as session:
+                s = await session.get(MissionStep, step.id)
+                s.retry_count += 1
+                s.status = StepStatus.PENDING
+                await session.commit()
+            mission = await self._transition(mission, MissionStatus.RUNNING)
+
+            async with self._sessions() as session:
+                step = await session.get(MissionStep, step.id)
+
+            retry_result = await self._executor.run(step, context, _pub)
+            if retry_result.success:
+                context.record_output(step.order, retry_result.output)
+                continue
+
+            await self._fail(
+                mission,
+                f"Step '{step.tool}' failed after retry: {retry_result.error}",
+            )
+            raise MissionError(f"Mission failed at step '{step.tool}'")
 
         return await self._succeed(mission)
 
@@ -260,13 +384,13 @@ class MissionEngine:
         async with self._sessions() as session:
             m = await session.get(Mission, mission.id)
             m.status = target
-            m.updated_at = datetime.now(timezone.utc)
+            m.updated_at = datetime.now(UTC)
             if target in {
                 MissionStatus.SUCCEEDED,
                 MissionStatus.FAILED,
                 MissionStatus.CANCELLED,
             }:
-                m.completed_at = datetime.now(timezone.utc)
+                m.completed_at = datetime.now(UTC)
             await session.commit()
             await session.refresh(m)
 
@@ -278,72 +402,41 @@ class MissionEngine:
         )
         return m
 
-    async def _execute_step(
-        self, mission: Mission, step: MissionStep
-    ) -> None:
-        tool = capability_registry.get_tool(step.tool)
-
+    async def _build_context(self, mission: Mission) -> ExecutionContext:
+        """Constrói o ExecutionContext de runtime a partir do MissionContext do banco."""
         async with self._sessions() as session:
-            s = await session.get(MissionStep, step.id)
-            s.status = StepStatus.RUNNING
-            s.started_at = datetime.now(timezone.utc)
-            await session.commit()
-
-        await self._publish(
-            EventType.MISSION_STEP_STARTED,
-            mission,
-            {"step_id": str(step.id), "tool": step.tool},
-        )
-
-        try:
-            if tool is None:
-                raise MissionError(
-                    f"Tool '{step.tool}' not found in registry"
+            rows = await session.execute(
+                select(MissionContext).where(
+                    MissionContext.mission_id == mission.id
                 )
-            result = await tool.fn(**step.input)
-        except Exception as exc:
-            async with self._sessions() as session:
-                s = await session.get(MissionStep, step.id)
-                s.status = StepStatus.FAILED
-                s.finished_at = datetime.now(timezone.utc)
-                await session.commit()
-
-            await self._publish(
-                EventType.MISSION_STEP_FAILED,
-                mission,
-                {"step_id": str(step.id), "tool": step.tool, "error": str(exc)},
             )
-            raise
+            ctx = rows.scalar_one_or_none()
 
-        async with self._sessions() as session:
-            s = await session.get(MissionStep, step.id)
-            s.status = StepStatus.SUCCEEDED
-            s.output = result if isinstance(result, dict) else {"result": result}
-            s.finished_at = datetime.now(timezone.utc)
-            await session.commit()
-
-        await self._publish(
-            EventType.MISSION_STEP_COMPLETED,
-            mission,
-            {"step_id": str(step.id), "tool": step.tool},
+        return ExecutionContext(
+            mission_id=mission.id,
+            workspace_id=mission.workspace_id,
+            intent=mission.intent,
+            workspace_config=ctx.workspace_config if ctx else {},
+            metadata=ctx.metadata_ if ctx else {},
+            correlation_id=mission.id,
         )
 
-    async def _retry_step(
-        self, mission: Mission, step: MissionStep
-    ) -> None:
-        await self._transition(mission, MissionStatus.RETRYING)
+    async def _mark_skipped(self, step: MissionStep) -> None:
         async with self._sessions() as session:
             s = await session.get(MissionStep, step.id)
-            s.retry_count += 1
-            s.status = StepStatus.PENDING
+            s.status = StepStatus.SKIPPED
+            s.finished_at = datetime.now(UTC)
             await session.commit()
-        await self._transition(
-            await self._get(mission.id), MissionStatus.RUNNING
+        logger.info(
+            "step.skipped",
+            step_id=str(step.id),
+            tool=step.tool,
+            policy=step.failure_policy.value,
         )
 
     async def _succeed(self, mission: Mission) -> Mission:
         m = await self._transition(mission, MissionStatus.SUCCEEDED)
-        await self._publish(EventType.MISSION_COMPLETED, m, {})
+        await self._publish(DomainEventType.MISSION_COMPLETED, m, {})
         return m
 
     async def _fail(self, mission: Mission, reason: str) -> Mission:
@@ -358,7 +451,7 @@ class MissionEngine:
 
         m = await self._transition(mission, MissionStatus.FAILED)
         await self._publish(
-            EventType.MISSION_FAILED, m, {"reason": reason}
+            DomainEventType.MISSION_FAILED, m, {"reason": reason}
         )
         return m
 
