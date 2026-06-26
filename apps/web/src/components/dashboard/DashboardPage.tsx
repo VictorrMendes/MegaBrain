@@ -9,11 +9,16 @@ import { Badge, type BadgeVariant, Spinner } from "@/components/ui";
 import {
   ActivityIcon,
   AlertTriangleIcon,
+  ArrowRightIcon,
   BookOpenIcon,
   BrainIcon,
+  CheckCircle2Icon,
   ClockIcon,
+  CommandIcon,
   InboxIcon,
+  MessageSquareIcon,
   PackageIcon,
+  PlusIcon,
   RefreshCwIcon,
   TargetIcon,
   XCircleIcon,
@@ -21,21 +26,46 @@ import {
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────
+
+const ACTIVE_STATUSES = new Set(["running", "planning", "waiting_approval", "ready"]);
+
+const STATUS_BADGE: Record<string, BadgeVariant> = {
+  pending:          "default",
+  planning:         "info",
+  waiting_approval: "warning",
+  ready:            "info",
+  running:          "active",
+  succeeded:        "success",
+  failed:           "error",
+  cancelled:        "muted",
+};
+
+const MISSION_BAR: Record<string, string> = {
+  running:          "bg-status-active",
+  planning:         "bg-status-info",
+  waiting_approval: "bg-status-warning",
+  ready:            "bg-status-success",
+};
+
+// ─────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────
 
-function greeting() {
+function greeting(): string {
   const h = new Date().getHours();
+  if (h < 5)  return "Boa madrugada";
   if (h < 12) return "Bom dia";
   if (h < 18) return "Boa tarde";
   return "Boa noite";
 }
 
-function longDate() {
+function longDate(): string {
   return new Date().toLocaleDateString("pt-BR", {
     weekday: "long",
-    day: "numeric",
-    month: "long",
+    day:     "numeric",
+    month:   "long",
   });
 }
 
@@ -50,47 +80,87 @@ function rel(dateStr: string): string {
   return d === 1 ? "ontem" : `${d}d`;
 }
 
-const STATUS_BADGE: Record<string, BadgeVariant> = {
-  pending:          "default",
-  planning:         "info",
-  waiting_approval: "warning",
-  ready:            "info",
-  running:          "active",
-  succeeded:        "success",
-  failed:           "error",
-  cancelled:        "muted",
-};
+type DashMission  = DashboardSummary["recent_missions"][0];
+type DashHealth   = DashboardSummary["health"][0];
+type FeedKind     = "mission" | "memory" | "fact" | "artifact";
 
-const ACTIVE_STATUSES = new Set(["running", "planning", "waiting_approval", "ready"]);
-
-// ─────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────
-
-type Mission  = DashboardSummary["recent_missions"][0];
-type Health   = DashboardSummary["health"][0];
-
-type AttentionItem = {
-  icon: React.ElementType;
-  label: string;
-  href: string;
-  kind: "warning" | "error";
-};
-
-type FeedItem = {
+interface FeedItem {
   id:   string;
-  kind: "mission" | "memory" | "fact" | "artifact";
+  kind: FeedKind;
   text: string;
   sub:  string;
   at:   Date;
   href: string;
+}
+
+interface Briefing {
+  headline: string;
+  context:  string;
+  signal:   "clear" | "active" | "attention" | "critical";
+}
+
+function deriveBriefing(data: DashboardSummary): Briefing {
+  const active = data.recent_missions.filter((m) => ACTIVE_STATUSES.has(m.status));
+  const allOk  = data.health.every((h) => h.status === "ready");
+
+  // Signal
+  let signal: Briefing["signal"] = "clear";
+  if (data.missions.failed > 0 || !allOk) signal = "critical";
+  else if (data.missions.waiting_approval > 0 || data.inbox_pending > 0) signal = "attention";
+  else if (active.length > 0) signal = "active";
+
+  // Headline
+  let headline: string;
+  if (signal === "critical") {
+    if (data.missions.failed > 0)
+      headline = `${data.missions.failed} missão${data.missions.failed > 1 ? "ões falharam" : " falhou"} — ação necessária`;
+    else
+      headline = "Sistema com atenção — verificar runtime";
+  } else if (active.length > 0) {
+    headline = `${active.length} missão${active.length > 1 ? "ões ativas" : " ativa"} em andamento`;
+  } else if (data.missions.waiting_approval > 0) {
+    headline = `${data.missions.waiting_approval} missão${data.missions.waiting_approval > 1 ? "ões aguardam" : " aguarda"} aprovação`;
+  } else if (data.inbox_pending > 0) {
+    headline = `${data.inbox_pending} item${data.inbox_pending > 1 ? "s" : ""} no inbox aguardam processamento`;
+  } else {
+    headline = "Tudo em ordem — sem pendências críticas";
+  }
+
+  // Context
+  const parts: string[] = [];
+  if (data.missions.total > 0)
+    parts.push(`${data.missions.total} missões total`);
+  if (data.recent_memories.length > 0)
+    parts.push(`${data.recent_memories.length} memórias`);
+  if (data.recent_facts.length > 0)
+    parts.push(`${data.recent_facts.length} fatos`);
+  if (data.scheduler.active_triggers > 0)
+    parts.push(`${data.scheduler.active_triggers} triggers ativos`);
+  parts.push(allOk ? "sistema operacional" : "sistema degradado");
+
+  return { headline, context: parts.join(" · "), signal };
+}
+
+const SIGNAL_STYLE: Record<Briefing["signal"], string> = {
+  clear:     "border-[var(--border-default)] bg-surface-raised",
+  active:    "border-accent-subtle bg-gradient-to-br from-accent-subtle to-transparent",
+  attention: "border-amber-900/40 bg-gradient-to-br from-amber-950/30 to-transparent",
+  critical:  "border-red-900/40 bg-gradient-to-br from-red-950/30 to-transparent",
+};
+
+const SIGNAL_LABEL_COLOR: Record<Briefing["signal"], string> = {
+  clear:     "text-status-success",
+  active:    "text-accent",
+  attention: "text-status-warning",
+  critical:  "text-status-error",
 };
 
 // ─────────────────────────────────────────────────────────────
-// Main component
+// Main Component
 // ─────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
+  const router = useRouter();
   const { current: workspace, loading: wsLoading } = useWorkspace();
   const [data,       setData]       = useState<DashboardSummary | null>(null);
   const [loading,    setLoading]    = useState(false);
@@ -99,7 +169,8 @@ export function DashboardPage() {
   const load = useCallback(
     async (ws = workspace, isRefresh = false) => {
       if (!ws) return;
-      if (isRefresh) setRefreshing(true); else setLoading(true);
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
       try {
         setData(await api.getDashboard(ws.id));
       } finally {
@@ -107,15 +178,13 @@ export function DashboardPage() {
         setRefreshing(false);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [workspace?.id],
+    [workspace?.id], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   useEffect(() => {
     if (workspace) load(workspace);
   }, [workspace?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── loading state ───
   if (wsLoading || loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -124,128 +193,215 @@ export function DashboardPage() {
     );
   }
 
-  // ─── derived data ───
   const activeMissions = data?.recent_missions.filter((m) =>
     ACTIVE_STATUSES.has(m.status),
   ) ?? [];
 
-  const allHealthy = data?.health.every((h) => h.status === "ready") ?? true;
+  const briefing = data ? deriveBriefing(data) : null;
 
-  const attentionItems: AttentionItem[] = [];
-  if (data) {
-    if (data.inbox_pending > 0)
-      attentionItems.push({
-        icon:  InboxIcon,
-        label: `${data.inbox_pending} ${data.inbox_pending === 1 ? "item" : "itens"} no inbox`,
-        href:  "/inbox",
-        kind:  "warning",
-      });
-    if (data.missions.waiting_approval > 0)
-      attentionItems.push({
-        icon:  AlertTriangleIcon,
-        label: `${data.missions.waiting_approval} aguardando aprovação`,
-        href:  "/missions",
-        kind:  "warning",
-      });
-    if (data.missions.failed > 0)
-      attentionItems.push({
-        icon:  XCircleIcon,
-        label: `${data.missions.failed} missão falhou`,
-        href:  "/missions",
-        kind:  "error",
-      });
-    if (!allHealthy)
-      attentionItems.push({
-        icon:  AlertTriangleIcon,
-        label: "Sistema com atenção",
-        href:  "/runtime",
-        kind:  "error",
-      });
-  }
+  const attentionItems = buildAttentionItems(data);
 
-  // ─── unified feed ───
-  const feed: FeedItem[] = [];
-  if (data) {
-    for (const m of data.recent_missions)
-      feed.push({ id: `m-${m.id}`,   kind: "mission",  text: m.intent,    sub: m.status,                          at: new Date(m.updated_at),  href: "/missions"  });
-    for (const m of data.recent_memories)
-      feed.push({ id: `mm-${m.id}`,  kind: "memory",   text: m.content,   sub: m.type,                            at: new Date(m.created_at),  href: "/memory"    });
-    for (const f of data.recent_facts)
-      feed.push({ id: `f-${f.id}`,   kind: "fact",     text: f.statement, sub: `${Math.round(f.confidence * 100)}%`, at: new Date(f.created_at), href: "/knowledge" });
-    for (const a of data.recent_artifacts)
-      feed.push({ id: `a-${a.id}`,   kind: "artifact", text: a.name,      sub: a.type,                            at: new Date(a.created_at),  href: "/artifacts" });
-    feed.sort((a, b) => b.at.getTime() - a.at.getTime());
-  }
-  const recentFeed = feed.slice(0, 14);
+  const feed = buildFeed(data);
 
-  // ─── render ───
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-2xl px-6 py-10 animate-fade-in">
+      <div className="mx-auto max-w-3xl px-6 py-8 animate-fade-in">
 
-        {/* ────── HERO ────── */}
-        <div className="mb-10 flex items-start justify-between">
-          <div>
-            <h1 className="text-3xl font-light text-content-primary tracking-tight">
-              {greeting()}.
-            </h1>
-            <p className="mt-1.5 text-sm text-content-secondary capitalize">
-              {longDate()}
-              {workspace && (
-                <span className="text-content-muted"> · {workspace.name}</span>
+        {/* ══════════════════════════════════════════════
+            HERO — Greeting + Quick Actions
+        ═══════════════════════════════════════════════ */}
+        <div className="mb-8">
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-3xl font-light tracking-tight text-content-primary">
+                {greeting()}.
+              </h1>
+              <p className="mt-1 capitalize text-sm text-content-muted">
+                {longDate()}
+                {workspace && (
+                  <span className="text-content-muted"> · {workspace.name}</span>
+                )}
+              </p>
+            </div>
+
+            <button
+              onClick={() => load(workspace ?? undefined, true)}
+              disabled={refreshing}
+              className={cn(
+                "mt-1 rounded-md p-1.5 transition-colors duration-fast",
+                "text-content-muted hover:text-content-secondary hover:bg-surface-subtle",
+                "disabled:opacity-30",
               )}
-            </p>
+            >
+              <RefreshCwIcon size={13} className={refreshing ? "animate-spin-slow" : ""} />
+            </button>
           </div>
 
-          <button
-            onClick={() => load(workspace ?? undefined, true)}
-            disabled={refreshing}
-            className={cn(
-              "mt-1.5 rounded-md p-1.5 transition-colors",
-              "text-content-muted hover:text-content-secondary hover:bg-surface-subtle",
-              "disabled:opacity-30",
-            )}
-            title="Atualizar"
-          >
-            <RefreshCwIcon size={14} className={refreshing ? "animate-spin" : ""} />
-          </button>
+          {/* Quick actions */}
+          <div className="mt-5 flex flex-wrap gap-2">
+            {[
+              {
+                icon: <MessageSquareIcon size={12} />,
+                label: "Nova conversa",
+                href: "/chat",
+              },
+              {
+                icon: <PlusIcon size={12} />,
+                label: "Nova missão",
+                href: "/missions",
+              },
+              {
+                icon: <ActivityIcon size={12} />,
+                label: "Timeline",
+                href: "/timeline",
+              },
+              {
+                icon: <CommandIcon size={12} />,
+                label: "Buscar",
+                onClick: () => {
+                  const e = new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true });
+                  window.dispatchEvent(e);
+                },
+              },
+            ].map((action, i) => (
+              action.href ? (
+                <Link
+                  key={i}
+                  href={action.href}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs",
+                    "border-[var(--border-subtle)] bg-surface-raised",
+                    "text-content-secondary hover:text-content-primary",
+                    "hover:border-[var(--border-default)] hover:bg-surface-overlay",
+                    "transition-colors duration-fast",
+                  )}
+                >
+                  <span className="text-content-muted">{action.icon}</span>
+                  {action.label}
+                </Link>
+              ) : (
+                <button
+                  key={i}
+                  onClick={action.onClick}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs",
+                    "border-[var(--border-subtle)] bg-surface-raised",
+                    "text-content-secondary hover:text-content-primary",
+                    "hover:border-[var(--border-default)] hover:bg-surface-overlay",
+                    "transition-colors duration-fast",
+                  )}
+                >
+                  <span className="text-content-muted">{action.icon}</span>
+                  {action.label}
+                </button>
+              )
+            ))}
+          </div>
         </div>
 
         {!data ? (
-          <p className="text-center text-xs text-content-muted py-20">
+          <p className="py-20 text-center text-sm text-content-muted">
             Nenhum dado disponível.
           </p>
         ) : (
-          <div className="space-y-10">
+          <div className="space-y-8">
 
-            {/* ────── ATENÇÃO ────── */}
+            {/* ══════════════════════════════════════════════
+                ATENÇÃO — strip condicional
+            ═══════════════════════════════════════════════ */}
             {attentionItems.length > 0 && (
-              <section>
-                <div className="flex flex-wrap gap-2">
-                  {attentionItems.map((item, i) => (
-                    <Link
-                      key={i}
-                      href={item.href}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5",
-                        "text-xs font-medium border transition-colors",
-                        item.kind === "warning"
-                          ? "bg-amber-950/40 border-amber-900/30 text-amber-400 hover:bg-amber-950/60"
-                          : "bg-red-950/40 border-red-900/30 text-red-400 hover:bg-red-950/60",
-                      )}
-                    >
-                      <item.icon size={12} />
-                      {item.label}
-                    </Link>
-                  ))}
+              <section className="flex flex-wrap gap-2">
+                {attentionItems.map((item, i) => (
+                  <Link
+                    key={i}
+                    href={item.href}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5",
+                      "text-xs font-medium transition-colors duration-fast",
+                      item.kind === "warning"
+                        ? "border-amber-900/40 bg-amber-950/20 text-amber-400 hover:bg-amber-950/40"
+                        : "border-red-900/40 bg-red-950/20 text-red-400 hover:bg-red-950/40",
+                    )}
+                  >
+                    <item.icon size={11} />
+                    {item.label}
+                  </Link>
+                ))}
+              </section>
+            )}
+
+            {/* ══════════════════════════════════════════════
+                BRIEFING — status inteligente do sistema
+            ═══════════════════════════════════════════════ */}
+            {briefing && (
+              <section
+                className={cn(
+                  "rounded-xl border p-4",
+                  SIGNAL_STYLE[briefing.signal],
+                )}
+              >
+                <div className="mb-2 flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      briefing.signal === "active" && "bg-accent animate-pulse-dot",
+                      briefing.signal === "clear"  && "bg-status-success",
+                      briefing.signal === "attention" && "bg-status-warning animate-pulse-dot",
+                      briefing.signal === "critical"  && "bg-status-error animate-pulse-dot",
+                    )}
+                  />
+                  <span
+                    className={cn(
+                      "text-[10px] font-semibold uppercase tracking-widest",
+                      SIGNAL_LABEL_COLOR[briefing.signal],
+                    )}
+                  >
+                    Status do sistema
+                  </span>
+                </div>
+
+                <p className="text-sm font-medium text-content-primary">
+                  {briefing.headline}
+                </p>
+                <p className="mt-1 text-xs text-content-muted">
+                  {briefing.context}
+                </p>
+
+                {/* Stats strip */}
+                <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-[var(--border-subtle)] pt-3">
+                  <StatCount
+                    label="missões"
+                    value={data.missions.total}
+                    detail={`${data.missions.running} ativas`}
+                  />
+                  <StatCount
+                    label="memórias"
+                    value={data.recent_memories.length}
+                  />
+                  <StatCount
+                    label="fatos"
+                    value={data.recent_facts.length}
+                  />
+                  <StatCount
+                    label="inbox"
+                    value={data.inbox_pending}
+                    detail={data.inbox_pending > 0 ? "pendente" : "vazio"}
+                    highlight={data.inbox_pending > 0}
+                  />
+                  <StatCount
+                    label="artifacts"
+                    value={data.recent_artifacts.length}
+                  />
                 </div>
               </section>
             )}
 
-            {/* ────── EM ANDAMENTO ────── */}
+            {/* ══════════════════════════════════════════════
+                EM ANDAMENTO — missões ativas
+            ═══════════════════════════════════════════════ */}
             <section>
-              <SectionHeader
-                icon={<ZapIcon size={12} />}
+              <SectionLabel
+                icon={<ZapIcon size={11} />}
                 title={
                   activeMissions.length > 0
                     ? `Em andamento · ${activeMissions.length}`
@@ -254,40 +410,64 @@ export function DashboardPage() {
                 href="/missions"
               />
 
-              {activeMissions.length === 0 ? (
-                <p className="mt-3 text-sm text-content-muted">
-                  Nenhuma missão ativa no momento.
-                </p>
-              ) : (
-                <div className="mt-3 space-y-1.5">
-                  {activeMissions.map((m) => (
-                    <ActiveMissionRow key={String(m.id)} mission={m} />
-                  ))}
-                </div>
-              )}
+              <div className="mt-3">
+                {activeMissions.length === 0 ? (
+                  <EmptySlot
+                    icon={<TargetIcon size={16} />}
+                    label="Nenhuma missão ativa"
+                    action={{ label: "Criar missão", href: "/missions" }}
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    {activeMissions.map((m) => (
+                      <ActiveMissionCard key={m.id} mission={m} />
+                    ))}
+                    {data.missions.running + data.missions.planning > activeMissions.length && (
+                      <Link
+                        href="/missions"
+                        className="flex items-center gap-1.5 py-1 text-xs text-content-muted hover:text-content-secondary transition-colors"
+                      >
+                        <span>Ver todas as missões</span>
+                        <ArrowRightIcon size={11} />
+                      </Link>
+                    )}
+                  </div>
+                )}
+              </div>
             </section>
 
-            {/* ────── ATIVIDADE RECENTE ────── */}
-            {recentFeed.length > 0 && (
+            {/* ══════════════════════════════════════════════
+                ATIVIDADE RECENTE — feed unificado
+            ═══════════════════════════════════════════════ */}
+            {feed.length > 0 && (
               <section>
-                <SectionHeader
-                  icon={<ClockIcon size={12} />}
+                <SectionLabel
+                  icon={<ClockIcon size={11} />}
                   title="Atividade recente"
                   href="/timeline"
                 />
                 <div className="relative mt-3">
                   {/* timeline line */}
-                  <div className="absolute left-[6px] top-3 bottom-3 w-px bg-[var(--border-subtle)]" />
+                  <div className="absolute left-[7px] top-2 bottom-2 w-px bg-[var(--border-subtle)]" />
                   <div className="space-y-0.5">
-                    {recentFeed.map((item) => (
+                    {feed.map((item) => (
                       <FeedRow key={item.id} item={item} />
                     ))}
                   </div>
                 </div>
+                <Link
+                  href="/timeline"
+                  className="mt-3 flex items-center gap-1.5 text-xs text-content-muted hover:text-content-secondary transition-colors"
+                >
+                  Ver timeline completa
+                  <ArrowRightIcon size={11} />
+                </Link>
               </section>
             )}
 
-            {/* ────── STATUS DO SISTEMA ────── */}
+            {/* ══════════════════════════════════════════════
+                SISTEMA — health footer
+            ═══════════════════════════════════════════════ */}
             <SystemFooter health={data.health} scheduler={data.scheduler} />
 
           </div>
@@ -298,22 +478,57 @@ export function DashboardPage() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Data builders
+// ─────────────────────────────────────────────────────────────
+
+function buildAttentionItems(data: DashboardSummary | null) {
+  if (!data) return [];
+  const items: { icon: React.ElementType; label: string; href: string; kind: "warning" | "error" }[] = [];
+  if (data.inbox_pending > 0)
+    items.push({ icon: InboxIcon, label: `${data.inbox_pending} inbox`, href: "/inbox", kind: "warning" });
+  if (data.missions.waiting_approval > 0)
+    items.push({ icon: AlertTriangleIcon, label: `${data.missions.waiting_approval} aguardando aprovação`, href: "/missions", kind: "warning" });
+  if (data.missions.failed > 0)
+    items.push({ icon: XCircleIcon, label: `${data.missions.failed} falhou`, href: "/missions", kind: "error" });
+  if (!data.health.every((h) => h.status === "ready"))
+    items.push({ icon: AlertTriangleIcon, label: "sistema degradado", href: "/runtime", kind: "error" });
+  return items;
+}
+
+function buildFeed(data: DashboardSummary | null): FeedItem[] {
+  if (!data) return [];
+  const feed: FeedItem[] = [];
+  for (const m of data.recent_missions)
+    feed.push({ id: `m-${m.id}`, kind: "mission", text: m.intent, sub: m.status, at: new Date(m.updated_at), href: "/missions" });
+  for (const m of data.recent_memories)
+    feed.push({ id: `mm-${m.id}`, kind: "memory", text: m.content, sub: m.type, at: new Date(m.created_at), href: "/memory" });
+  for (const f of data.recent_facts)
+    feed.push({ id: `f-${f.id}`, kind: "fact", text: f.statement, sub: `${Math.round(f.confidence * 100)}%`, at: new Date(f.created_at), href: "/knowledge" });
+  for (const a of data.recent_artifacts)
+    feed.push({ id: `a-${a.id}`, kind: "artifact", text: a.name, sub: a.type, at: new Date(a.created_at), href: "/artifacts" });
+  return feed.sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, 12);
+}
+
+// ─────────────────────────────────────────────────────────────
 // Sub-components
 // ─────────────────────────────────────────────────────────────
 
-function SectionHeader({
+function SectionLabel({
   icon, title, href,
 }: {
-  icon: React.ReactNode;
+  icon:  React.ReactNode;
   title: string;
-  href: string;
+  href:  string;
 }) {
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-content-muted">{icon}</span>
       <Link
         href={href}
-        className="text-[11px] font-semibold uppercase tracking-widest text-content-muted hover:text-content-secondary transition-colors"
+        className={cn(
+          "text-[10px] font-semibold uppercase tracking-widest",
+          "text-content-muted hover:text-content-secondary transition-colors duration-fast",
+        )}
       >
         {title}
       </Link>
@@ -321,91 +536,157 @@ function SectionHeader({
   );
 }
 
-const MISSION_DOT: Record<string, string> = {
-  running:          "bg-status-active animate-pulse-dot",
-  planning:         "bg-status-info",
-  waiting_approval: "bg-status-warning",
-  ready:            "bg-status-success",
-};
+function StatCount({
+  label, value, detail, highlight,
+}: {
+  label:     string;
+  value:     number;
+  detail?:   string;
+  highlight?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline gap-1">
+      <span
+        className={cn(
+          "text-lg font-semibold tabular-nums",
+          highlight ? "text-status-warning" : "text-content-primary",
+        )}
+      >
+        {value}
+      </span>
+      <span className="text-xs text-content-muted">{label}</span>
+      {detail && (
+        <span className="text-2xs text-content-muted">({detail})</span>
+      )}
+    </div>
+  );
+}
 
-function ActiveMissionRow({ mission }: { mission: Mission }) {
+function ActiveMissionCard({ mission }: { mission: DashMission }) {
   const variant  = STATUS_BADGE[mission.status] ?? "default";
-  const dotColor = MISSION_DOT[mission.status]  ?? "bg-content-muted";
+  const barColor = MISSION_BAR[mission.status]  ?? "bg-content-muted";
+  const isLive   = mission.status === "running";
 
   return (
     <Link
       href="/missions"
       className={cn(
-        "group flex items-center gap-3 rounded-lg px-3 py-2.5",
-        "border border-[var(--border-subtle)] bg-[var(--surface-raised)]",
-        "hover:border-[var(--border-default)] hover:bg-[var(--surface-overlay)]",
-        "transition-colors",
+        "group flex items-center gap-3 rounded-lg",
+        "border border-[var(--border-subtle)] bg-surface-raised",
+        "overflow-hidden",
+        "hover:border-[var(--border-default)] hover:bg-surface-overlay",
+        "transition-colors duration-fast",
       )}
     >
-      <span className={cn("h-2 w-2 shrink-0 rounded-full", dotColor)} />
-      <span className="flex-1 truncate text-sm text-content-primary">
-        {mission.intent}
-      </span>
-      <Badge variant={variant} size="sm">
-        {mission.status.replace(/_/g, " ")}
-      </Badge>
-      <span className="shrink-0 text-xs text-content-muted tabular-nums">
-        {rel(mission.updated_at)}
-      </span>
+      {/* Status bar — colored left edge */}
+      <span className={cn("w-0.5 self-stretch shrink-0", barColor)} />
+
+      {/* Live pulse */}
+      {isLive && (
+        <span className="ml-2 h-2 w-2 shrink-0 rounded-full bg-status-active animate-pulse-dot" />
+      )}
+
+      <div className={cn("flex flex-1 items-center gap-3 px-3 py-3", !isLive && "ml-2")}>
+        <p className="flex-1 truncate text-sm text-content-primary">
+          {mission.intent}
+        </p>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <Badge variant={variant} size="sm">
+            {mission.status.replace(/_/g, " ")}
+          </Badge>
+          <span className="w-8 text-right text-xs text-content-muted tabular-nums">
+            {rel(mission.updated_at)}
+          </span>
+        </div>
+      </div>
     </Link>
   );
 }
 
-const FEED_ICON = {
+const FEED_ICON: Record<FeedKind, React.ElementType> = {
   mission:  TargetIcon,
   memory:   BrainIcon,
   fact:     BookOpenIcon,
   artifact: PackageIcon,
-} as const;
+};
 
-const FEED_BADGE: Record<FeedItem["kind"], BadgeVariant> = {
+const FEED_DOT: Record<FeedKind, string> = {
+  mission:  "bg-status-active",
+  memory:   "bg-status-success",
+  fact:     "bg-status-info",
+  artifact: "bg-content-muted",
+};
+
+const FEED_BADGE: Record<FeedKind, BadgeVariant> = {
   mission:  "default",
   memory:   "active",
   fact:     "info",
-  artifact: "default",
+  artifact: "muted",
 };
 
 function FeedRow({ item }: { item: FeedItem }) {
-  const Icon    = FEED_ICON[item.kind] ?? ActivityIcon;
+  const Icon    = FEED_ICON[item.kind];
   const variant = FEED_BADGE[item.kind];
+  const dot     = FEED_DOT[item.kind];
 
   return (
     <Link
       href={item.href}
       className={cn(
-        "group relative flex items-center gap-3 rounded-md py-2 pl-6 pr-3",
-        "hover:bg-[var(--surface-raised)] transition-colors",
+        "group relative flex items-center gap-3",
+        "rounded-md py-1.5 pl-6 pr-3",
+        "hover:bg-surface-raised transition-colors duration-fast",
       )}
     >
-      {/* timeline dot */}
+      {/* Timeline dot */}
       <span
         className={cn(
           "absolute left-0 top-1/2 -translate-y-1/2",
-          "flex h-3 w-3 items-center justify-center",
-          "rounded-full border border-[var(--border-default)] bg-[var(--surface-base)]",
+          "flex h-3.5 w-3.5 items-center justify-center",
+          "rounded-full border border-[var(--border-default)] bg-surface-base",
         )}
       >
-        <span className="h-1 w-1 rounded-full bg-[var(--border-strong)]" />
+        <span className={cn("h-1.5 w-1.5 rounded-full", dot)} />
       </span>
 
-      <Icon size={12} className="shrink-0 text-content-muted" />
+      <Icon size={11} className="shrink-0 text-content-muted" />
 
       <p className="flex-1 truncate text-sm text-content-secondary group-hover:text-content-primary transition-colors">
         {item.text}
       </p>
 
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-2">
         <Badge variant={variant} size="sm">{item.kind}</Badge>
-        <span className="text-xs text-content-muted tabular-nums w-8 text-right">
+        <span className="w-8 text-right text-xs text-content-muted tabular-nums">
           {rel(item.at.toISOString())}
         </span>
       </div>
     </Link>
+  );
+}
+
+function EmptySlot({
+  icon, label, action,
+}: {
+  icon:   React.ReactNode;
+  label:  string;
+  action: { label: string; href: string };
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-dashed border-[var(--border-subtle)] px-4 py-3">
+      <div className="flex items-center gap-2 text-content-muted">
+        {icon}
+        <span className="text-sm">{label}</span>
+      </div>
+      <Link
+        href={action.href}
+        className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors"
+      >
+        <PlusIcon size={11} />
+        {action.label}
+      </Link>
+    </div>
   );
 }
 
@@ -416,30 +697,43 @@ function SystemFooter({
   health:    DashboardSummary["health"];
   scheduler: DashboardSummary["scheduler"];
 }) {
+  const allOk = health.every((h) => h.status === "ready");
+
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-[var(--border-subtle)] pt-4">
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[var(--border-subtle)] pt-5">
+      {/* Overall health */}
+      <Link
+        href="/runtime"
+        className="flex items-center gap-1.5 group"
+      >
+        {allOk
+          ? <CheckCircle2Icon size={12} className="text-status-success" />
+          : <AlertTriangleIcon size={12} className="text-status-warning" />
+        }
+        <span className="text-xs text-content-muted group-hover:text-content-secondary transition-colors">
+          {allOk ? "sistema operacional" : "sistema com atenção"}
+        </span>
+      </Link>
+
+      {/* Individual components */}
       {health.map((h) => (
-        <HealthDot key={h.name} component={h} />
+        <span key={h.name} className="flex items-center gap-1">
+          <span
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              h.status === "ready"    && "bg-status-success",
+              h.status === "degraded" && "bg-status-warning",
+              h.status === "failed"   && "bg-status-error",
+            )}
+          />
+          <span className="text-xs text-content-muted">{h.name}</span>
+        </span>
       ))}
-      <span className="ml-auto flex items-center gap-1 text-xs text-content-muted">
+
+      <span className="ml-auto flex items-center gap-1.5 text-xs text-content-muted">
         <ZapIcon size={10} />
         {scheduler.active_triggers} trigger{scheduler.active_triggers !== 1 ? "s" : ""}
       </span>
     </div>
-  );
-}
-
-function HealthDot({ component }: { component: Health }) {
-  const ok = component.status === "ready";
-  return (
-    <span className="flex items-center gap-1 text-xs text-content-muted">
-      <span
-        className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          ok ? "bg-status-success" : "bg-status-error",
-        )}
-      />
-      {component.name}
-    </span>
   );
 }
