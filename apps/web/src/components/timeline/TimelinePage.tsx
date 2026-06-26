@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, type InboxItem, type Mission, type Memory, type Workspace } from "@/lib/api";
+import { api, type InboxItem, type Mission, type Memory } from "@/lib/api";
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { cn } from "@/lib/cn";
 import {
   ActivityIcon, LoaderIcon, InboxIcon, TargetIcon, BrainIcon,
@@ -39,21 +40,17 @@ const KIND_COLOR: Record<EventKind, string> = {
 };
 
 export function TimelinePage() {
-  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const { current: workspace, loading: wsLoading } = useWorkspace();
   const [events, setEvents] = useState<TimelineEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<EventKind | "all">("all");
 
   useEffect(() => {
+    if (!workspace) return;
     async function load() {
+      setLoading(true);
       try {
-        let wss = await api.listWorkspaces();
-        if (wss.length === 0) {
-          const ws = await api.createWorkspace("Personal");
-          wss = [ws];
-        }
-        const ws = wss[0];
-        setWorkspace(ws);
+        const ws = workspace;
 
         const [inbox, missions, memories] = await Promise.allSettled([
           api.listInbox(ws.id),
@@ -117,7 +114,7 @@ export function TimelinePage() {
     { all: 0, inbox: 0, mission: 0, memory: 0 }
   );
 
-  if (loading) {
+  if (wsLoading || loading) {
     return (
       <div className="flex h-full items-center justify-center">
         <LoaderIcon size={20} className="animate-spin text-neutral-500" />

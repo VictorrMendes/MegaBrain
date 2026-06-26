@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, type InboxItem, type Workspace } from "@/lib/api";
+import { api, type InboxItem } from "@/lib/api";
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { cn } from "@/lib/cn";
 import {
   InboxIcon, LoaderIcon, CheckIcon, XIcon, PlusIcon, SendIcon,
@@ -22,32 +23,21 @@ function formatDate(s: string) {
 }
 
 export function InboxPage() {
-  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const { current: workspace, loading: wsLoading } = useWorkspace();
   const [items, setItems] = useState<InboxItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [newContent, setNewContent] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
 
   useEffect(() => {
-    async function load() {
-      try {
-        let wss = await api.listWorkspaces();
-        if (wss.length === 0) {
-          const ws = await api.createWorkspace("Personal");
-          wss = [ws];
-        }
-        const ws = wss[0];
-        setWorkspace(ws);
-        const inboxItems = await api.listInbox(ws.id);
-        setItems(inboxItems);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
+    if (!workspace) return;
+    setLoading(true);
+    api.listInbox(workspace.id)
+      .then(setItems)
+      .finally(() => setLoading(false));
+  }, [workspace?.id]);
 
   async function submit() {
     if (!workspace || !newContent.trim()) return;
@@ -84,7 +74,7 @@ export function InboxPage() {
     }
   }
 
-  if (loading) {
+  if (wsLoading || loading) {
     return (
       <div className="flex h-full items-center justify-center">
         <LoaderIcon size={20} className="animate-spin text-neutral-500" />

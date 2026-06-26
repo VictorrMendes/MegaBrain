@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, type Fact, type Observation, type Workspace } from "@/lib/api";
+import { api, type Fact, type Observation } from "@/lib/api";
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { LoaderIcon, BookOpenIcon, LightbulbIcon, DatabaseIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -28,36 +29,21 @@ function ConfidencePill({ value }: { value: number }) {
 }
 
 export function KnowledgePage() {
-  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const { current: workspace, loading: wsLoading } = useWorkspace();
   const [facts, setFacts] = useState<Fact[]>([]);
   const [observations, setObservations] = useState<Observation[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"facts" | "observations">("facts");
 
   useEffect(() => {
-    async function load() {
-      try {
-        let wss = await api.listWorkspaces();
-        if (wss.length === 0) {
-          const ws = await api.createWorkspace("Personal");
-          wss = [ws];
-        }
-        const ws = wss[0];
-        setWorkspace(ws);
-        const [fs, obs] = await Promise.all([
-          api.listFacts(ws.id),
-          api.listObservations(ws.id),
-        ]);
-        setFacts(fs);
-        setObservations(obs);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
+    if (!workspace) return;
+    setLoading(true);
+    Promise.all([api.listFacts(workspace.id), api.listObservations(workspace.id)])
+      .then(([fs, obs]) => { setFacts(fs); setObservations(obs); })
+      .finally(() => setLoading(false));
+  }, [workspace?.id]);
 
-  if (loading) {
+  if (wsLoading || loading) {
     return (
       <div className="flex h-full items-center justify-center">
         <LoaderIcon size={20} className="animate-spin text-neutral-500" />

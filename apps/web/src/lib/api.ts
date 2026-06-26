@@ -218,6 +218,84 @@ export type StreamEvent =
   | { event: "done" }
   | { event: "error"; message: string };
 
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
+export interface MissionCounts {
+  pending: number;
+  planning: number;
+  waiting_approval: number;
+  ready: number;
+  running: number;
+  succeeded: number;
+  failed: number;
+  cancelled: number;
+  total: number;
+}
+
+export interface RecentMission {
+  id: string;
+  intent: string;
+  status: string;
+  trigger: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecentMemory {
+  id: string;
+  type: string;
+  content: string;
+  importance: number;
+  created_at: string;
+}
+
+export interface RecentFact {
+  id: string;
+  statement: string;
+  confidence: number;
+  created_at: string;
+}
+
+export interface RecentArtifact {
+  id: string;
+  name: string;
+  type: string;
+  mime: string;
+  mission_id: string;
+  created_at: string;
+}
+
+export interface DashboardSummary {
+  workspace_id: string;
+  workspace_name: string;
+  generated_at: string;
+  missions: MissionCounts;
+  inbox_pending: number;
+  recent_missions: RecentMission[];
+  recent_memories: RecentMemory[];
+  recent_facts: RecentFact[];
+  recent_artifacts: RecentArtifact[];
+  health: ComponentHealth[];
+  scheduler: SchedulerInfo;
+}
+
+// ── Search ─────────────────────────────────────────────────────────────────────
+
+export interface SearchResult {
+  type: string;
+  id: string;
+  title: string;
+  excerpt: string;
+  workspace_id: string;
+  href: string;
+}
+
+export interface SearchResponse {
+  query: string;
+  results: SearchResult[];
+  total: number;
+}
+
 // Obsidian types
 export interface ObsidianNoteInput {
   path: string;
@@ -452,6 +530,16 @@ export const api = {
     post<InboxItem>(`/workspaces/${wsId}/inbox/${itemId}/process`),
   dismissInboxItem: (wsId: string, itemId: string) =>
     post<InboxItem>(`/workspaces/${wsId}/inbox/${itemId}/dismiss`),
+
+  // ── Dashboard ─────────────────────────────────────────────────────────
+  getDashboard: (wsId: string) =>
+    get<DashboardSummary>(`/workspaces/${wsId}/dashboard`),
+
+  // ── Search ────────────────────────────────────────────────────────────
+  search: (q: string, workspaceId?: string, limit = 20) =>
+    get<SearchResponse>(
+      `/search?q=${encodeURIComponent(q)}${workspaceId ? `&workspace_id=${workspaceId}` : ""}&limit=${limit}`
+    ),
 
   // ── Runtime ───────────────────────────────────────────────────────────
   getRuntimeStatus: () => get<RuntimeStatus>("/runtime"),

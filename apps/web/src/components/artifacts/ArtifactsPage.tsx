@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, type MissionArtifact, type Mission, type Workspace } from "@/lib/api";
+import { api, type MissionArtifact, type Mission } from "@/lib/api";
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { cn } from "@/lib/cn";
 import {
   PackageIcon, LoaderIcon, FileIcon, ImageIcon, FileTextIcon, CodeIcon,
@@ -24,35 +25,20 @@ function ArtifactIcon({ mime }: { mime: string }) {
 }
 
 export function ArtifactsPage() {
-  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const { current: workspace, loading: wsLoading } = useWorkspace();
   const [artifacts, setArtifacts] = useState<MissionArtifact[]>([]);
   const [missions, setMissions] = useState<Mission[]>([]);
   const [selectedMission, setSelectedMission] = useState<string | "">("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [filtering, setFiltering] = useState(false);
 
   useEffect(() => {
-    async function load() {
-      try {
-        let wss = await api.listWorkspaces();
-        if (wss.length === 0) {
-          const ws = await api.createWorkspace("Personal");
-          wss = [ws];
-        }
-        const ws = wss[0];
-        setWorkspace(ws);
-        const [arts, ms] = await Promise.all([
-          api.listArtifacts(ws.id),
-          api.listMissions(ws.id),
-        ]);
-        setArtifacts(arts);
-        setMissions(ms);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
+    if (!workspace) return;
+    setLoading(true);
+    Promise.all([api.listArtifacts(workspace.id), api.listMissions(workspace.id)])
+      .then(([arts, ms]) => { setArtifacts(arts); setMissions(ms); })
+      .finally(() => setLoading(false));
+  }, [workspace?.id]);
 
   async function filterByMission(missionId: string) {
     if (!workspace) return;
@@ -71,7 +57,7 @@ export function ArtifactsPage() {
     return acc;
   }, {});
 
-  if (loading) {
+  if (wsLoading || loading) {
     return (
       <div className="flex h-full items-center justify-center">
         <LoaderIcon size={20} className="animate-spin text-neutral-500" />

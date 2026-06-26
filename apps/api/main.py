@@ -18,6 +18,7 @@ from kernel.logger import get_logger, setup_logging
 from kernel.runtime import runtime
 from routers.artifacts import router as artifacts_router
 from routers.conversations import router as conversations_router
+from routers.dashboard import router as dashboard_router
 from routers.documents import router as documents_router
 from routers.inbox import router as inbox_router
 from routers.knowledge import router as knowledge_router
@@ -27,6 +28,7 @@ from routers.obsidian import router as obsidian_router
 from routers.plugins import router as plugins_router
 from routers.runtime import router as runtime_router
 from routers.scheduler import router as scheduler_router
+from routers.search import router as search_router
 from routers.workspaces import router as workspaces_router
 
 logger = get_logger("khonshu.api")
@@ -126,3 +128,5 @@ app.include_router(inbox_router)
 app.include_router(obsidian_router)
 app.include_router(knowledge_router)
 app.include_router(artifacts_router)
+app.include_router(dashboard_router)
+app.include_router(search_router)

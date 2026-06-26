@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, type Memory, type Workspace } from "@/lib/api";
+import { api, type Memory } from "@/lib/api";
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { cn } from "@/lib/cn";
 import { BrainIcon, LoaderIcon, SearchIcon } from "lucide-react";
 
@@ -20,30 +21,19 @@ function formatDate(s: string) {
 }
 
 export function MemoryPage() {
-  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const { current: workspace, loading: wsLoading } = useWorkspace();
   const [memories, setMemories] = useState<Memory[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
-    async function load() {
-      try {
-        let wss = await api.listWorkspaces();
-        if (wss.length === 0) {
-          const ws = await api.createWorkspace("Personal");
-          wss = [ws];
-        }
-        const ws = wss[0];
-        setWorkspace(ws);
-        const mems = await api.listMemories(ws.id);
-        setMemories(mems);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
+    if (!workspace) return;
+    setLoading(true);
+    api.listMemories(workspace.id)
+      .then(setMemories)
+      .finally(() => setLoading(false));
+  }, [workspace?.id]);
 
   async function recall() {
     if (!workspace || !query.trim()) return;
@@ -74,7 +64,7 @@ export function MemoryPage() {
     return acc;
   }, {});
 
-  if (loading) {
+  if (wsLoading || loading) {
     return (
       <div className="flex h-full items-center justify-center">
         <LoaderIcon size={20} className="animate-spin text-neutral-500" />
