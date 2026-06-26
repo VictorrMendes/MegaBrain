@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from kernel.events import DomainEventType, KhonshuEvent, event_bus
+from kernel.health import ComponentHealth, db_health
 from kernel.logger import get_logger
-from models.mission import MissionTrigger
 from models.scheduler import SchedulerTrigger, TriggerStatus, TriggerType
 
 logger = get_logger(__name__)
@@ -52,23 +52,24 @@ class SchedulerEngine:
     - EventTrigger: reage a um evento de domínio específico.
     - RuleTrigger: avalia uma expressão booleana em intervalo configurável.
 
-    O SchedulerEngine não tem estado em memória além da referência ao
-    MissionEngine. Todo o estado persiste em scheduler_triggers.
+    Nenhuma Engine é importada diretamente. Ao disparar, publica o evento
+    SCHEDULER_FIRED; MissionEngine subscreve e cria a missão (ADR-008).
     """
 
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
-        mission_engine: object,  # MissionEngine — evita import circular
     ) -> None:
         self._sessions = session_factory
-        self._mission_engine = mission_engine
 
         # Assina eventos de domínio para processar EventTriggers
         event_bus.subscribe_event(
             "*",  # tratado como wildcard internamente
             self._on_domain_event,
         )
+
+    async def health(self) -> ComponentHealth:
+        return await db_health("scheduler_engine", self._sessions)
 
     # ------------------------------------------------------------------ #
     # CRUD de triggers                                                     #
@@ -187,6 +188,8 @@ class SchedulerEngine:
         """Verifica e dispara TemporalTriggers e RuleTriggers pendentes.
 
         Deve ser chamado a cada ~60 segundos pelo lifespan do servidor.
+        Triggers são ordenados pela prioridade efetiva calculada em memória
+        (base + age_boost + type_boost), garantindo anti-starvation.
         """
         now = datetime.now(UTC)
 
@@ -200,9 +203,13 @@ class SchedulerEngine:
                         TriggerType.rule,
                     ]),
                 )
-                .order_by(SchedulerTrigger.priority.desc())
             )
             triggers = list(result.scalars())
+
+        triggers.sort(
+            key=lambda t: self._compute_effective_priority(t, now),
+            reverse=True,
+        )
 
         for trigger in triggers:
             should_fire = False
@@ -259,7 +266,6 @@ class SchedulerEngine:
             intent=intent[:80],
         )
 
-        # Publica evento de domínio antes de criar a missão
         fired_event = KhonshuEvent(
             type=DomainEventType.SCHEDULER_FIRED,
             workspace_id=trigger.workspace_id,
@@ -270,6 +276,8 @@ class SchedulerEngine:
                 "trigger_name": trigger.name,
                 "trigger_type": trigger.type.value,
                 "intent": intent,
+                "context": context,
+                "requires_approval": trigger.requires_approval,
             },
         )
         try:
@@ -277,23 +285,6 @@ class SchedulerEngine:
         except Exception as exc:
             logger.warning(
                 "scheduler.publish_failed", error=str(exc)
-            )
-
-        # Cria a missão
-        try:
-            await self._mission_engine.create(
-                workspace_id=trigger.workspace_id,
-                intent=intent,
-                trigger=MissionTrigger.SCHEDULED,
-                requires_approval=trigger.requires_approval,
-                context_metadata=context,
-                correlation_id=fired_event.correlation_id,
-            )
-        except Exception as exc:
-            logger.error(
-                "scheduler.mission_create_failed",
-                trigger_id=str(trigger.id),
-                error=str(exc),
             )
 
         # Atualiza metadados do trigger
@@ -312,6 +303,38 @@ class SchedulerEngine:
     # ------------------------------------------------------------------ #
     # Helpers                                                              #
     # ------------------------------------------------------------------ #
+
+    def _compute_effective_priority(
+        self, trigger: SchedulerTrigger, now: datetime
+    ) -> int:
+        """Compute runtime priority for anti-starvation scheduling.
+
+        Formula: base + age_boost + type_boost
+        - age_boost: +1 per day since last fire (or creation), capped at 50.
+          Ensures long-waiting triggers are eventually promoted.
+        - type_boost: event=+10, temporal=+5, rule=+0.
+          Reactive triggers get slight precedence over polled ones.
+        - Starvation guard: if idle > 7 days, add +100 override so no
+          trigger can be indefinitely starved by high-priority peers.
+        """
+        base = trigger.priority
+
+        reference = trigger.last_fired_at or trigger.created_at
+        if reference.tzinfo is None:
+            reference = reference.replace(tzinfo=UTC)
+        idle_days = (now - reference).total_seconds() / 86_400
+
+        age_boost = min(int(idle_days), 50)
+
+        type_boost = {
+            TriggerType.event: 10,
+            TriggerType.temporal: 5,
+            TriggerType.rule: 0,
+        }.get(trigger.type, 0)
+
+        starvation = 100 if idle_days > 7 else 0
+
+        return base + age_boost + type_boost + starvation
 
     async def _evaluate_rule(self, trigger: SchedulerTrigger) -> bool:
         """Avalia a expressão da RuleTrigger.

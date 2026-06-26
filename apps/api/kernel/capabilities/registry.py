@@ -62,6 +62,18 @@ class Capability:
     estimated_cost_units: int = 0    # 0 = sem custo
     side_effects: list[str] = field(default_factory=list)
 
+    # Scheduling & reliability metadata (ADR-008)
+    availability: float = 1.0           # 0.0–1.0 expected uptime
+    cpu_requirement: str | None = None  # "low" | "medium" | "high" | None
+    memory_requirement_mb: int | None = None
+    requires_network: bool = False
+    timeout_seconds: int | None = None  # None = no hard cap
+    idempotent: bool = False            # safe to retry without side effects
+    cooldown_seconds: int | None = None # min gap between consecutive calls
+    exclusive_execution: bool = False   # cannot run concurrently with itself
+    requires_confirmation: bool = False # must prompt user before execution
+    confidence_score: float = 1.0       # 0.0–1.0 provider-reported reliability
+
     def register_tool(
         self,
         name: str,
@@ -78,7 +90,7 @@ class Capability:
 
     def to_planner_descriptor(self) -> dict:
         """Compact descriptor injected into Planner prompts."""
-        return {
+        d: dict = {
             "name": self.name,
             "description": self.description,
             "tags": self.tags,
@@ -90,11 +102,26 @@ class Capability:
             "required_context": self.required_context,
             "events_consumed": self.events_consumed,
             "events_produced": self.events_produced,
+            "availability": self.availability,
+            "requires_network": self.requires_network,
+            "idempotent": self.idempotent,
+            "exclusive_execution": self.exclusive_execution,
+            "requires_confirmation": self.requires_confirmation,
+            "confidence_score": self.confidence_score,
             "tools": [
                 {"name": t.name, "description": t.description}
                 for t in self.tools.values()
             ],
         }
+        if self.cpu_requirement is not None:
+            d["cpu_requirement"] = self.cpu_requirement
+        if self.memory_requirement_mb is not None:
+            d["memory_requirement_mb"] = self.memory_requirement_mb
+        if self.timeout_seconds is not None:
+            d["timeout_seconds"] = self.timeout_seconds
+        if self.cooldown_seconds is not None:
+            d["cooldown_seconds"] = self.cooldown_seconds
+        return d
 
 
 class CapabilityRegistry:

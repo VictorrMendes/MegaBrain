@@ -7,6 +7,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from kernel.events import DomainEventType, KhonshuEvent, event_bus
+from kernel.health import ComponentHealth, db_health
 from kernel.logger import get_logger
 from kernel.providers.base import LLMProvider
 from models.inbox import InboxItem, InboxItemStatus, InboxItemType
@@ -28,32 +30,44 @@ Responda SOMENTE com JSON válido neste formato exato:
   "route": "knowledge|task|both|dismiss",
   "title": "título curto opcional (até 80 chars)",
   "reasoning": "explicação de 1-2 frases",
-  "mission_intent": "intenção da missão em linguagem natural (se route=task|both)",
-  "key_facts": ["fato 1", "fato 2"]  // se route=knowledge|both, extraia fatos
+  "mission_intent": "intenção da missão em linguagem natural (se task|both)",
+  "key_facts": ["fato 1", "fato 2"]
 }"""
 
 
 class InboxEngine:
     """Pipeline universal de entrada do PAIOS.
 
-    Classifica o conteúdo via LLM e roteia para:
-    - KnowledgeEngine (fatos extraídos)
-    - MissionEngine (intent → nova Mission)
-    - Ambos
+    Classifica o conteúdo via LLM e publica eventos de roteamento:
+    - DomainEventType.INBOX_ROUTED_AS_KNOWLEDGE  → KnowledgeEngine processa
+    - DomainEventType.INBOX_ROUTED_AS_TASK       → MissionEngine processa
+
+    Nenhuma Engine é importada diretamente. Toda comunicação passa pelo
+    EventBus (ADR-008).
     """
 
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
         llm_provider: LLMProvider,
-        knowledge_engine: object,
-        mission_engine: object,
     ) -> None:
         self._sessions = session_factory
         self._llm = llm_provider
-        # typed as object to avoid circular imports
-        self._knowledge = knowledge_engine
-        self._mission = mission_engine
+
+    async def health(self) -> ComponentHealth:
+        return await db_health("inbox_engine", self._sessions)
+
+    def subscribe_to_events(self) -> None:
+        """Registra handlers de eventos no EventBus.
+
+        Chamado por KhonshuRuntime.start() após todas as engines serem
+        criadas. InboxEngine escuta mission.created para atualizar
+        InboxItem.mission_id de forma assíncrona.
+        """
+        event_bus.subscribe_event(
+            DomainEventType.MISSION_CREATED,
+            self._on_mission_created,
+        )
 
     # ------------------------------------------------------------------ #
     # Public API                                                           #
@@ -69,10 +83,6 @@ class InboxEngine:
         metadata: dict | None = None,
         process_now: bool = False,
     ) -> InboxItem:
-        """Recebe um item e o persiste com status pending.
-
-        Se process_now=True, executa o roteamento imediatamente.
-        """
         async with self._sessions() as session:
             item = InboxItem(
                 workspace_id=workspace_id,
@@ -99,7 +109,7 @@ class InboxEngine:
         return item
 
     async def process(self, item_id: UUID) -> InboxItem:
-        """Classifica e roteia um item da inbox via LLM."""
+        """Classifica o item via LLM e publica eventos de roteamento."""
         async with self._sessions() as session:
             item = await session.get(InboxItem, item_id)
             if item is None:
@@ -131,79 +141,61 @@ class InboxEngine:
             )
             return await self._load(item_id)
 
-        mission_id: UUID | None = None
-        knowledge_extracted = False
         route = decision.get("route", "dismiss")
         notes = decision.get("reasoning", "")
 
         if route in ("knowledge", "both"):
             key_facts: list[str] = decision.get("key_facts", [])
             if key_facts:
-                for fact_text in key_facts:
-                    try:
-                        await self._knowledge.store_fact(  # type: ignore[attr-defined]
-                            workspace_id=workspace_id,
-                            statement=fact_text,
-                            source_type="inbox",
-                            source_id=item_id,
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "inbox.fact_store_failed",
-                            item_id=str(item_id),
-                            error=str(exc),
-                        )
-                knowledge_extracted = bool(key_facts)
+                await event_bus.publish_event(
+                    KhonshuEvent(
+                        type=DomainEventType.INBOX_ROUTED_AS_KNOWLEDGE,
+                        workspace_id=workspace_id,
+                        source="inbox",
+                        payload={
+                            "item_id": str(item_id),
+                            "key_facts": key_facts,
+                        },
+                    )
+                )
+                logger.info(
+                    "inbox.knowledge_event_published",
+                    item_id=str(item_id),
+                    facts=len(key_facts),
+                )
 
         if route in ("task", "both"):
-            intent = decision.get("mission_intent") or decision.get(
-                "title", raw_content[:200]
+            intent = (
+                decision.get("mission_intent")
+                or decision.get("title", raw_content[:200])
             )
-            try:
-                mission = await self._mission.create(  # type: ignore[attr-defined]
+            await event_bus.publish_event(
+                KhonshuEvent(
+                    type=DomainEventType.INBOX_ROUTED_AS_TASK,
                     workspace_id=workspace_id,
-                    intent=intent,
-                    metadata={"inbox_item_id": str(item_id)},
-                    trigger=None,
+                    source="inbox",
+                    payload={
+                        "item_id": str(item_id),
+                        "intent": intent,
+                    },
                 )
-                mission_id = mission.id
-            except Exception as exc:
-                logger.warning(
-                    "inbox.mission_create_failed",
-                    item_id=str(item_id),
-                    error=str(exc),
-                )
+            )
+            logger.info(
+                "inbox.task_event_published",
+                item_id=str(item_id),
+                intent=str(intent)[:80],
+            )
 
         status_map = {
-            ("knowledge", False): InboxItemStatus.routed_knowledge,
-            ("knowledge", True): InboxItemStatus.routed_knowledge,
-            ("task", False): InboxItemStatus.routed_task,
-            ("task", True): InboxItemStatus.routed_task,
-            ("both", False): InboxItemStatus.routed_both,
-            ("both", True): InboxItemStatus.routed_both,
-            ("dismiss", False): InboxItemStatus.dismissed,
-            ("dismiss", True): InboxItemStatus.dismissed,
+            "knowledge": InboxItemStatus.routed_knowledge,
+            "task": InboxItemStatus.routed_task,
+            "both": InboxItemStatus.routed_both,
+            "dismiss": InboxItemStatus.dismissed,
         }
-        # fallback for unknown route values
-        final_status = status_map.get(
-            (route, bool(mission_id)),
-            InboxItemStatus.dismissed,
-        )
-        if route == "knowledge":
-            final_status = InboxItemStatus.routed_knowledge
-        elif route == "task":
-            final_status = InboxItemStatus.routed_task
-        elif route == "both":
-            final_status = InboxItemStatus.routed_both
-        else:
-            final_status = InboxItemStatus.dismissed
+        final_status = status_map.get(route, InboxItemStatus.dismissed)
 
         await self._update_status(
-            item_id,
-            final_status,
-            mission_id=mission_id,
-            knowledge_extracted=knowledge_extracted,
-            routing_notes=notes,
+            item_id, final_status, routing_notes=notes
         )
 
         logger.info(
@@ -249,6 +241,42 @@ class InboxEngine:
         return await self._load(item_id)
 
     # ------------------------------------------------------------------ #
+    # Event handlers                                                       #
+    # ------------------------------------------------------------------ #
+
+    async def _on_mission_created(self, event: KhonshuEvent) -> None:
+        """Atualiza InboxItem.mission_id quando MissionEngine cria a missão."""
+        inbox_item_id = (
+            event.payload
+            .get("context_metadata", {})
+            .get("inbox_item_id")
+        )
+        if not inbox_item_id:
+            return
+
+        mission_id = event.payload.get("mission_id")
+        if not mission_id:
+            return
+
+        try:
+            async with self._sessions() as session:
+                item = await session.get(InboxItem, UUID(inbox_item_id))
+                if item:
+                    item.mission_id = UUID(mission_id)
+                    await session.commit()
+                    logger.info(
+                        "inbox.mission_linked",
+                        item_id=inbox_item_id,
+                        mission_id=mission_id,
+                    )
+        except Exception as exc:
+            logger.warning(
+                "inbox.mission_link_failed",
+                item_id=inbox_item_id,
+                error=str(exc),
+            )
+
+    # ------------------------------------------------------------------ #
     # Internal                                                             #
     # ------------------------------------------------------------------ #
 
@@ -263,13 +291,10 @@ class InboxEngine:
             prompt=prompt, system=_ROUTER_SYSTEM
         )
         raw = result.content.strip()
-
-        # Extrai JSON mesmo se houver texto ao redor
         start = raw.find("{")
         end = raw.rfind("}") + 1
         if start >= 0 and end > start:
             raw = raw[start:end]
-
         return json.loads(raw)
 
     async def _update_status(

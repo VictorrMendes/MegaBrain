@@ -11,6 +11,7 @@ from engines.plan.provider import PlanProvider, PlanProviderError
 from engines.plan.validator import PlanValidator
 from kernel.capabilities import capability_registry
 from kernel.events import DomainEventType, KhonshuEvent, event_bus
+from kernel.health import ComponentHealth, db_health
 from kernel.logger import get_logger
 from models.mission import (
     ExecutionPlan,
@@ -402,8 +403,67 @@ class MissionEngine:
         )
         return m
 
+    async def health(self) -> ComponentHealth:
+        return await db_health("mission_engine", self._sessions)
+
+    def subscribe_to_events(self) -> None:
+        """Registra handlers de eventos no EventBus."""
+        event_bus.subscribe_event(
+            DomainEventType.INBOX_ROUTED_AS_TASK,
+            self._on_inbox_task,
+        )
+        event_bus.subscribe_event(
+            DomainEventType.SCHEDULER_FIRED,
+            self._on_scheduler_fired,
+        )
+
+    async def _on_inbox_task(self, event: KhonshuEvent) -> None:
+        """Cria missão quando InboxEngine roteia como tarefa."""
+        intent: str = event.payload.get("intent", "")
+        item_id: str | None = event.payload.get("item_id")
+        if not intent:
+            return
+        try:
+            await self.create(
+                workspace_id=event.workspace_id,
+                intent=intent,
+                trigger=MissionTrigger.MANUAL,
+                context_metadata=(
+                    {"inbox_item_id": item_id} if item_id else {}
+                ),
+                correlation_id=event.correlation_id,
+                causation_id=event.id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "mission.inbox_task_failed",
+                item_id=item_id,
+                error=str(exc),
+            )
+
+    async def _on_scheduler_fired(self, event: KhonshuEvent) -> None:
+        """Cria missão quando o Scheduler dispara um trigger."""
+        intent: str = event.payload.get("intent", "")
+        if not intent:
+            return
+        try:
+            await self.create(
+                workspace_id=event.workspace_id,
+                intent=intent,
+                trigger=MissionTrigger.SCHEDULED,
+                context_metadata=event.payload.get("context", {}),
+                correlation_id=event.correlation_id,
+                causation_id=event.id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "mission.scheduler_fired_failed",
+                trigger_id=event.payload.get("trigger_id"),
+                error=str(exc),
+            )
+
     async def _build_context(self, mission: Mission) -> ExecutionContext:
-        """Constrói o ExecutionContext de runtime a partir do MissionContext do banco."""
+        """Constrói ExecutionContext de runtime a partir do MissionContext."""
         async with self._sessions() as session:
             rows = await session.execute(
                 select(MissionContext).where(

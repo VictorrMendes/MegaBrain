@@ -1,17 +1,74 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from enum import StrEnum
+from typing import ClassVar
 
 
-class TaskType(StrEnum):
-    """Hint para o provider selecionar o modelo mais adequado ao tipo de tarefa."""
+@dataclass
+class ExecutionProfile:
+    """Describes execution requirements for a single LLM call.
 
-    planning = "planning"           # geração de planos de execução
-    routing = "routing"             # decisões de roteamento (InboxEngine)
-    summarization = "summarization" # sumarização de conteúdo
-    extraction = "extraction"       # extração de dados estruturados
-    conversation = "conversation"   # chat interativo com o usuário
+    Allows providers to select the most appropriate model and
+    configuration without coupling callers to specific model names.
+
+    Pre-built profiles are available as class attributes (PLANNING,
+    ROUTING, SUMMARIZATION, EXTRACTION, CONVERSATION).
+    """
+
+    name: str = "default"
+    require_reasoning: bool = False
+    max_latency_ms: int | None = None      # None = no hard constraint
+    max_cost_units: int | None = None      # None = no hard constraint
+    stream: bool = False
+    max_context_tokens: int | None = None  # None = provider default
+    deterministic: bool = False            # True → temperature=0
+
+    # Named pre-built profiles ─────────────────────────────────────────
+    PLANNING: ClassVar[ExecutionProfile]
+    ROUTING: ClassVar[ExecutionProfile]
+    SUMMARIZATION: ClassVar[ExecutionProfile]
+    EXTRACTION: ClassVar[ExecutionProfile]
+    CONVERSATION: ClassVar[ExecutionProfile]
+
+
+ExecutionProfile.PLANNING = ExecutionProfile(
+    name="planning",
+    require_reasoning=True,
+    max_latency_ms=30_000,
+    stream=False,
+    deterministic=False,
+)
+ExecutionProfile.ROUTING = ExecutionProfile(
+    name="routing",
+    require_reasoning=False,
+    max_latency_ms=5_000,
+    stream=False,
+    max_context_tokens=4096,
+    deterministic=True,
+)
+ExecutionProfile.SUMMARIZATION = ExecutionProfile(
+    name="summarization",
+    require_reasoning=False,
+    max_latency_ms=15_000,
+    stream=True,
+    deterministic=False,
+)
+ExecutionProfile.EXTRACTION = ExecutionProfile(
+    name="extraction",
+    require_reasoning=False,
+    max_latency_ms=10_000,
+    stream=False,
+    max_context_tokens=8192,
+    deterministic=True,
+)
+ExecutionProfile.CONVERSATION = ExecutionProfile(
+    name="conversation",
+    require_reasoning=False,
+    stream=True,
+    deterministic=False,
+)
 
 
 @dataclass
@@ -48,7 +105,7 @@ class LLMProvider(ABC):
         self,
         prompt: str,
         system: str | None = None,
-        task_type: TaskType | None = None,
+        profile: ExecutionProfile | None = None,
         **kwargs,
     ) -> GenerateResult: ...
 
@@ -57,7 +114,7 @@ class LLMProvider(ABC):
         self,
         prompt: str,
         system: str | None = None,
-        task_type: TaskType | None = None,
+        profile: ExecutionProfile | None = None,
         **kwargs,
     ) -> AsyncIterator[str]: ...
 
@@ -65,7 +122,7 @@ class LLMProvider(ABC):
     async def chat(
         self,
         messages: list[ChatMessage],
-        task_type: TaskType | None = None,
+        profile: ExecutionProfile | None = None,
         **kwargs,
     ) -> GenerateResult: ...
 
@@ -73,7 +130,7 @@ class LLMProvider(ABC):
     async def chat_stream(
         self,
         messages: list[ChatMessage],
-        task_type: TaskType | None = None,
+        profile: ExecutionProfile | None = None,
         **kwargs,
     ) -> AsyncIterator[str]: ...
 

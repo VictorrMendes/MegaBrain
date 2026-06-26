@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from core.database import AsyncSessionLocal
 from engines.inbox import InboxEngine
 from engines.knowledge import KnowledgeEngine
@@ -11,6 +13,7 @@ from engines.plugin import PluginEngine
 from engines.prompt import PromptEngine
 from engines.rag import RAGEngine
 from engines.scheduler import SchedulerEngine
+from kernel.health import ComponentHealth, HealthReport
 from kernel.logger import get_logger
 from kernel.providers.ollama import OllamaProvider
 
@@ -18,13 +21,13 @@ logger = get_logger(__name__)
 
 
 class KhonshuRuntime:
-    """Central runtime that owns all engine singletons.
+    """Central runtime que possui todos os singletons de engines.
 
-    Replaces the scattered global variables in core/dependencies.py.
-    Call start() once during application lifespan; then access engines
-    via properties. Stored on app.state.runtime after startup.
+    Substitui as variáveis globais espalhadas em core/dependencies.py.
+    Chame start() uma vez no lifespan; depois acesse engines via
+    propriedades. Armazenado em app.state.runtime após startup.
 
-    Engine init order follows dependency graph:
+    Ordem de init segue o grafo de dependências:
         llm → memory, rag → obsidian, prompt → knowledge → mission
         → scheduler, inbox
     """
@@ -42,11 +45,10 @@ class KhonshuRuntime:
         self._inbox: InboxEngine | None = None
 
     def start(self) -> None:
-        """Initialize all engines in dependency order.
+        """Inicializa todas as engines em ordem de dependência.
 
-        Sync because all engine constructors are sync (they take a
-        session_factory, not a live connection). Safe to call from
-        an async context without await.
+        Síncrono porque todos os construtores de engine são síncronos
+        (recebem session_factory, não uma conexão ativa).
         """
         logger.info("runtime.starting")
 
@@ -64,26 +66,32 @@ class KhonshuRuntime:
             session_factory=AsyncSessionLocal,
             rag_engine=self._rag,
         )
-        self._plugin = PluginEngine(session_factory=AsyncSessionLocal)
+        self._plugin = PluginEngine(
+            session_factory=AsyncSessionLocal
+        )
         self._prompt = PromptEngine(
             memory_engine=self._memory,
             rag_engine=self._rag,
         )
-        self._knowledge = KnowledgeEngine(session_factory=AsyncSessionLocal)
+        self._knowledge = KnowledgeEngine(
+            session_factory=AsyncSessionLocal
+        )
         self._mission = MissionEngine(
             session_factory=AsyncSessionLocal,
             plan_providers=[LLMPlanProvider(self._llm)],
         )
         self._scheduler = SchedulerEngine(
             session_factory=AsyncSessionLocal,
-            mission_engine=self._mission,
         )
         self._inbox = InboxEngine(
             session_factory=AsyncSessionLocal,
             llm_provider=self._llm,
-            knowledge_engine=self._knowledge,
-            mission_engine=self._mission,
         )
+
+        # Registrar subscrições de eventos (ADR-008)
+        self._knowledge.subscribe_to_events()
+        self._mission.subscribe_to_events()
+        self._inbox.subscribe_to_events()
 
         logger.info(
             "runtime.ready",
@@ -93,58 +101,74 @@ class KhonshuRuntime:
             ],
         )
 
+    async def health_report(self) -> HealthReport:
+        """Coleta o health de todos os componentes em paralelo."""
+        assert self._llm is not None, "Runtime not started"
+
+        checks: list[ComponentHealth] = list(
+            await asyncio.gather(
+                self._mission.health(),
+                self._knowledge.health(),
+                self._scheduler.health(),
+                self._inbox.health(),
+                self._llm.health(),
+                return_exceptions=False,
+            )
+        )
+        return HealthReport.from_components(checks)
+
     # ------------------------------------------------------------------ #
     # Engine accessors                                                     #
     # ------------------------------------------------------------------ #
 
     @property
     def llm(self) -> OllamaProvider:
-        assert self._llm is not None, "KhonshuRuntime.start() was not called"
+        assert self._llm is not None, "Runtime not started"
         return self._llm
 
     @property
     def memory(self) -> MemoryEngine:
-        assert self._memory is not None, "KhonshuRuntime.start() was not called"
+        assert self._memory is not None, "Runtime not started"
         return self._memory
 
     @property
     def rag(self) -> RAGEngine:
-        assert self._rag is not None, "KhonshuRuntime.start() was not called"
+        assert self._rag is not None, "Runtime not started"
         return self._rag
 
     @property
     def obsidian(self) -> ObsidianEngine:
-        assert self._obsidian is not None, "KhonshuRuntime.start() was not called"
+        assert self._obsidian is not None, "Runtime not started"
         return self._obsidian
 
     @property
     def plugin(self) -> PluginEngine:
-        assert self._plugin is not None, "KhonshuRuntime.start() was not called"
+        assert self._plugin is not None, "Runtime not started"
         return self._plugin
 
     @property
     def prompt(self) -> PromptEngine:
-        assert self._prompt is not None, "KhonshuRuntime.start() was not called"
+        assert self._prompt is not None, "Runtime not started"
         return self._prompt
 
     @property
     def knowledge(self) -> KnowledgeEngine:
-        assert self._knowledge is not None, "KhonshuRuntime.start() was not called"
+        assert self._knowledge is not None, "Runtime not started"
         return self._knowledge
 
     @property
     def mission(self) -> MissionEngine:
-        assert self._mission is not None, "KhonshuRuntime.start() was not called"
+        assert self._mission is not None, "Runtime not started"
         return self._mission
 
     @property
     def scheduler(self) -> SchedulerEngine:
-        assert self._scheduler is not None, "KhonshuRuntime.start() was not called"
+        assert self._scheduler is not None, "Runtime not started"
         return self._scheduler
 
     @property
     def inbox(self) -> InboxEngine:
-        assert self._inbox is not None, "KhonshuRuntime.start() was not called"
+        assert self._inbox is not None, "Runtime not started"
         return self._inbox
 
 

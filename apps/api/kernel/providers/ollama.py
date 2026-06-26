@@ -1,18 +1,20 @@
 import json
+import time
 from collections.abc import AsyncIterator
 
 import httpx
 
 from kernel.config import settings
+from kernel.health import ComponentHealth, HealthStatus
 from kernel.logger import get_logger
 
 from .base import (
     ChatMessage,
     EmbeddingProvider,
     EmbedResult,
+    ExecutionProfile,
     GenerateResult,
     LLMProvider,
-    TaskType,
 )
 
 logger = get_logger(__name__)
@@ -33,29 +35,56 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
         # e.g. {"planning": "llama3.1:8b", "summarization": "qwen2.5:3b"}
         self.task_profiles: dict[str, str] = task_profiles or {}
 
-    def _model_for(self, task_type: TaskType | None) -> str:
-        if task_type and task_type.value in self.task_profiles:
-            return self.task_profiles[task_type.value]
+    def _model_for(self, profile: ExecutionProfile | None) -> str:
+        """Select model based on profile name or fall back to default."""
+        if profile and profile.name in self.task_profiles:
+            return self.task_profiles[profile.name]
+        if profile and profile.require_reasoning:
+            # Prefer reasoning-capable model if configured
+            return self.task_profiles.get("reasoning", self.model)
         return self.model
+
+    async def health(self) -> ComponentHealth:
+        t0 = time.monotonic()
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{self.base_url}/api/tags")
+                resp.raise_for_status()
+            latency = (time.monotonic() - t0) * 1000
+            return ComponentHealth(
+                name="ollama_provider",
+                status=HealthStatus.ready,
+                latency_ms=round(latency, 2),
+            )
+        except Exception as exc:
+            return ComponentHealth(
+                name="ollama_provider",
+                status=HealthStatus.failed,
+                detail=str(exc),
+            )
 
     async def generate(
         self,
         prompt: str,
         system: str | None = None,
-        task_type: TaskType | None = None,
+        profile: ExecutionProfile | None = None,
         **kwargs,
     ) -> GenerateResult:
-        model = self._model_for(task_type)
+        model = self._model_for(profile)
         payload: dict = {"model": model, "prompt": prompt, "stream": False}
         if system:
             payload["system"] = system
 
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(f"{self.base_url}/api/generate", json=payload)
+            resp = await client.post(
+                f"{self.base_url}/api/generate", json=payload
+            )
             resp.raise_for_status()
             data = resp.json()
 
-        logger.debug("ollama.generate", model=model, tokens=data.get("eval_count"))
+        logger.debug(
+            "ollama.generate", model=model, tokens=data.get("eval_count")
+        )
         return GenerateResult(
             content=data["response"],
             model=model,
@@ -66,10 +95,10 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
         self,
         prompt: str,
         system: str | None = None,
-        task_type: TaskType | None = None,
+        profile: ExecutionProfile | None = None,
         **kwargs,
     ) -> AsyncIterator[str]:
-        model = self._model_for(task_type)
+        model = self._model_for(profile)
         payload: dict = {"model": model, "prompt": prompt, "stream": True}
         if system:
             payload["system"] = system
@@ -89,23 +118,30 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
     async def chat(
         self,
         messages: list[ChatMessage],
-        task_type: TaskType | None = None,
+        profile: ExecutionProfile | None = None,
         **kwargs,
     ) -> GenerateResult:
-        model = self._model_for(task_type)
+        model = self._model_for(profile)
+        msg_list = [
+            {"role": m.role, "content": m.content} for m in messages
+        ]
         payload = {
             "model": model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "messages": msg_list,
             "stream": False,
             "think": False,
         }
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(f"{self.base_url}/api/chat", json=payload)
+            resp = await client.post(
+                f"{self.base_url}/api/chat", json=payload
+            )
             resp.raise_for_status()
             data = resp.json()
 
         content = data["message"]["content"]
-        logger.debug("ollama.chat", model=model, tokens=data.get("eval_count"))
+        logger.debug(
+            "ollama.chat", model=model, tokens=data.get("eval_count")
+        )
         return GenerateResult(
             content=content,
             model=model,
@@ -115,13 +151,16 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
     async def chat_stream(
         self,
         messages: list[ChatMessage],
-        task_type: TaskType | None = None,
+        profile: ExecutionProfile | None = None,
         **kwargs,
     ) -> AsyncIterator[str]:
-        model = self._model_for(task_type)
+        model = self._model_for(profile)
+        msg_list = [
+            {"role": m.role, "content": m.content} for m in messages
+        ]
         payload = {
             "model": model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "messages": msg_list,
             "stream": True,
             "think": False,
         }
@@ -138,7 +177,7 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
                         chunk = data.get("message", {}).get("content", "")
                         if chunk:
                             buf += chunk
-                            # strip <think>...</think> blocks that may span chunks
+                            # strip <think>...</think> spanning chunks
                             while True:
                                 if in_think:
                                     end = buf.find("</think>")
@@ -189,7 +228,9 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
 
         return [
             EmbedResult(
-                embedding=emb, model=self.embed_model, dimensions=len(emb)
+                embedding=emb,
+                model=self.embed_model,
+                dimensions=len(emb),
             )
             for emb in data["embeddings"]
         ]
