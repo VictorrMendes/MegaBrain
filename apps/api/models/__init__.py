@@ -14,12 +14,16 @@ from .mission import (
     StepType,
 )
 from .obsidian import ObsidianLink, ObsidianNote
+from .integration import ConnectedAccount, Integration, SyncRecord
 from .workspace import Workspace
 from .workspace_plugin import WorkspacePlugin
 
 __all__ = [
     "Base",
     "Workspace",
+    "Integration",
+    "ConnectedAccount",
+    "SyncRecord",
     "Memory",
     "MemoryType",
     "Conversation",

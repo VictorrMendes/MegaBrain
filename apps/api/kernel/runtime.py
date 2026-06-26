@@ -4,6 +4,7 @@ import asyncio
 
 from core.database import AsyncSessionLocal
 from engines.inbox import InboxEngine
+from engines.integration import IntegrationManager
 from engines.knowledge import KnowledgeEngine
 from engines.memory import MemoryEngine
 from engines.mission import MissionEngine
@@ -15,6 +16,7 @@ from engines.rag import RAGEngine
 from engines.scheduler import SchedulerEngine
 from kernel.context import ContextBuilder
 from kernel.health import ComponentHealth, HealthReport
+from kernel.life_context import LifeContextProvider
 from kernel.logger import get_logger
 from kernel.providers.ollama import OllamaProvider
 
@@ -44,6 +46,8 @@ class KhonshuRuntime:
         self._mission: MissionEngine | None = None
         self._scheduler: SchedulerEngine | None = None
         self._inbox: InboxEngine | None = None
+        self._integration: IntegrationManager | None = None
+        self._life_context: LifeContextProvider | None = None
         self._context: ContextBuilder | None = None
 
     def start(self) -> None:
@@ -89,10 +93,17 @@ class KhonshuRuntime:
             session_factory=AsyncSessionLocal,
             llm_provider=self._llm,
         )
+        self._integration = IntegrationManager(
+            session_factory=AsyncSessionLocal,
+        )
+        self._life_context = LifeContextProvider(
+            integration_manager=self._integration,
+        )
         self._context = ContextBuilder(
             memory_engine=self._memory,
             rag_engine=self._rag,
             knowledge_engine=self._knowledge,
+            life_context=self._life_context,
         )
 
         # Registrar subscrições de eventos (ADR-008)
@@ -104,7 +115,8 @@ class KhonshuRuntime:
             "runtime.ready",
             engines=[
                 "llm", "memory", "rag", "obsidian", "plugin",
-                "prompt", "knowledge", "mission", "scheduler", "inbox",
+                "prompt", "knowledge", "mission", "scheduler",
+                "inbox", "integration", "life_context",
             ],
         )
 
@@ -177,6 +189,16 @@ class KhonshuRuntime:
     def inbox(self) -> InboxEngine:
         assert self._inbox is not None, "Runtime not started"
         return self._inbox
+
+    @property
+    def integration(self) -> IntegrationManager:
+        assert self._integration is not None, "Runtime not started"
+        return self._integration
+
+    @property
+    def life_context(self) -> LifeContextProvider:
+        assert self._life_context is not None, "Runtime not started"
+        return self._life_context
 
     @property
     def context(self) -> ContextBuilder:

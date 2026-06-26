@@ -49,3 +49,11 @@ def get_scheduler_engine():
 
 def get_inbox_engine():
     return runtime.inbox
+
+
+def get_integration_manager():
+    return runtime.integration
+
+
+def get_life_context():
+    return runtime.life_context

@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from engines.knowledge import KnowledgeEngine
     from engines.memory import MemoryEngine
     from engines.rag import RAGEngine
+    from kernel.life_context import LifeContextProvider
 
 logger = get_logger(__name__)
 
@@ -73,10 +74,12 @@ class ContextBuilder:
         memory_engine: MemoryEngine,
         rag_engine: RAGEngine,
         knowledge_engine: KnowledgeEngine,
+        life_context: LifeContextProvider | None = None,
     ) -> None:
         self._memory = memory_engine
         self._rag = rag_engine
         self._knowledge = knowledge_engine
+        self._life_context = life_context
 
     async def build(
         self,
@@ -170,6 +173,19 @@ class ContextBuilder:
                 chunk_count = len(chunks)
         except Exception as exc:
             logger.warning("context.rag_failed", error=str(exc))
+
+        # ── 5. Life Context (digital ecosystem snapshot) ─────────────────
+        if self._life_context is not None:
+            try:
+                life_section = await self._life_context.to_prompt_section(
+                    workspace_id
+                )
+                if life_section:
+                    sections.append(life_section)
+            except Exception as exc:
+                logger.warning(
+                    "context.life_context_failed", error=str(exc)
+                )
 
         system_prompt = "\n\n".join(sections)
 

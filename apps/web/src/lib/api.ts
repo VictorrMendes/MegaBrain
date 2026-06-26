@@ -349,6 +349,76 @@ export interface SearchResponse {
   total: number;
 }
 
+// ── Integrations (Life Platform) ─────────────────────────────────────────────
+
+export interface AvailableIntegration {
+  slug: string;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  sync_strategy: string;
+  capabilities: string[];
+}
+
+export type IntegrationHealth = "healthy" | "degraded" | "unhealthy" | "unknown";
+export type IntegrationStatus = "active" | "disconnected" | "error" | "pending";
+
+export interface Integration {
+  id: string;
+  workspace_id: string;
+  slug: string;
+  name: string;
+  category: string;
+  icon: string;
+  description: string;
+  status: IntegrationStatus;
+  health: IntegrationHealth;
+  sync_strategy: string;
+  life_context_lines: string[];
+  last_sync_at: string | null;
+  next_sync_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConnectedAccount {
+  id: string;
+  integration_id: string;
+  workspace_id: string;
+  provider: string;
+  account_name: string;
+  account_email: string | null;
+  status: string;
+  scopes: string[];
+  quota_used: number | null;
+  quota_limit: number | null;
+  last_sync_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SyncRecord {
+  id: string;
+  integration_id: string;
+  workspace_id: string;
+  sync_type: string;
+  status: "running" | "success" | "partial" | "failed";
+  items_synced: number;
+  items_failed: number;
+  conflicts: number;
+  duration_ms: number | null;
+  error_message: string | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export interface LifeContextSnapshot {
+  lines: string[];
+  integration_count: number;
+  generated_at: string;
+}
+
 // Obsidian types
 export interface ObsidianNoteInput {
   path: string;
@@ -612,6 +682,30 @@ export const api = {
     post<Trigger>(`/workspaces/${wsId}/triggers/${triggerId}/pause`),
   resumeTrigger: (wsId: string, triggerId: string) =>
     post<Trigger>(`/workspaces/${wsId}/triggers/${triggerId}/resume`),
+
+  // ── Integrations ─────────────────────────────────────────────────────
+  listAvailableIntegrations: () =>
+    get<AvailableIntegration[]>("/integrations/available"),
+  listIntegrations: (wsId: string) =>
+    get<Integration[]>(`/integrations/${wsId}`),
+  connectIntegration: (wsId: string, slug: string, config: Record<string, string>, accountName?: string) =>
+    post<Integration>(`/integrations/${wsId}/connect`, {
+      slug, config, account_name: accountName,
+    }),
+  disconnectIntegration: (wsId: string, integrationId: string, accountId?: string) =>
+    del(`/integrations/${wsId}/${integrationId}${accountId ? `?account_id=${accountId}` : ""}`),
+  syncIntegration: (wsId: string, integrationId: string) =>
+    post<SyncRecord>(`/integrations/${wsId}/${integrationId}/sync`),
+  syncAllIntegrations: (wsId: string) =>
+    post<{ synced: number }>(`/integrations/${wsId}/sync-all`),
+  checkIntegrationHealth: (wsId: string, integrationId: string) =>
+    get<{ health: IntegrationHealth }>(`/integrations/${wsId}/${integrationId}/health`),
+  listIntegrationAccounts: (wsId: string, integrationId: string) =>
+    get<ConnectedAccount[]>(`/integrations/${wsId}/${integrationId}/accounts`),
+  getSyncHistory: (wsId: string, integrationId: string, limit = 10) =>
+    get<SyncRecord[]>(`/integrations/${wsId}/${integrationId}/sync-history?limit=${limit}`),
+  getLifeContextSnapshot: (wsId: string) =>
+    get<LifeContextSnapshot>(`/integrations/${wsId}/life-context/snapshot`),
 
   // ── Obsidian ──────────────────────────────────────────────────────────
   syncObsidian: (wsId: string, notes: ObsidianNoteInput[]) =>

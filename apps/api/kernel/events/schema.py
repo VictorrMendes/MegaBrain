@@ -12,7 +12,7 @@ class KhonshuEvent:
     type: str
     workspace_id: UUID
     payload: dict
-    source: str                       # chat | scheduler | inbox | mission | system
+    source: str  # chat | scheduler | inbox | mission | system
     actor: str = "system"             # user | scheduler | agent | system
     version: str = "1.0"
     priority: int = 5                 # 0 (low) – 9 (critical)
@@ -129,6 +129,65 @@ class DomainEventType:
     INBOX_ROUTED_AS_KNOWLEDGE = "inbox.routed_as_knowledge"
     INBOX_ROUTED_AS_TASK = "inbox.routed_as_task"
     INBOX_DISMISSED = "inbox.dismissed"
+
+
+# Integration / Life Platform events — published on khonshu.events
+# Sourced by IntegrationManager; consumed by KnowledgeEngine and InboxEngine.
+
+class IntegrationEventType:
+    # Lifecycle
+    INTEGRATION_CONNECTED = "integration.connected"
+    INTEGRATION_DISCONNECTED = "integration.disconnected"
+    INTEGRATION_SYNC_STARTED = "integration.sync.started"
+    INTEGRATION_SYNC_DONE = "integration.sync.done"
+    INTEGRATION_SYNC_FAILED = "integration.sync.failed"
+    INTEGRATION_UNHEALTHY = "integration.unhealthy"
+
+    # Calendar
+    CALENDAR_EVENT_CREATED = "calendar.event.created"
+    CALENDAR_EVENT_UPDATED = "calendar.event.updated"
+    CALENDAR_EVENT_DELETED = "calendar.event.deleted"
+    CALENDAR_UPCOMING = "calendar.upcoming"
+
+    # Email
+    EMAIL_RECEIVED = "email.received"
+    EMAIL_SENT = "email.sent"
+    EMAIL_IMPORTANT = "email.important"
+
+    # GitHub
+    GITHUB_PR_CREATED = "github.pull_request.created"
+    GITHUB_PR_MERGED = "github.pull_request.merged"
+    GITHUB_PR_REVIEW_NEEDED = "github.pull_request.review_needed"
+    GITHUB_ISSUE_OPENED = "github.issue.opened"
+    GITHUB_ISSUE_CLOSED = "github.issue.closed"
+    GITHUB_PUSH = "github.push"
+    GITHUB_RELEASE = "github.release"
+
+    # Docker / Infrastructure
+    DOCKER_CONTAINER_STARTED = "docker.container.started"
+    DOCKER_CONTAINER_STOPPED = "docker.container.stopped"
+    DOCKER_CONTAINER_FAILED = "docker.container.failed"
+    DOCKER_CONTAINER_UNHEALTHY = "docker.container.unhealthy"
+
+    # Home Assistant
+    HOME_PRESENCE_DETECTED = "homeassistant.presence.detected"
+    HOME_PRESENCE_GONE = "homeassistant.presence.gone"
+    HOME_ENTITY_CHANGED = "homeassistant.entity.changed"
+    HOME_AUTOMATION_FIRED = "homeassistant.automation.fired"
+
+    # Files / Storage
+    DRIVE_FILE_CREATED = "drive.file.created"
+    DRIVE_FILE_UPDATED = "drive.file.updated"
+    NEXTCLOUD_FILE_CHANGED = "nextcloud.file.changed"
+
+    # Messaging / Communication
+    TELEGRAM_MESSAGE_RECEIVED = "telegram.message.received"
+    NOTION_PAGE_UPDATED = "notion.page.updated"
+    NOTION_DATABASE_UPDATED = "notion.database.updated"
+
+    # Information
+    WEATHER_UPDATED = "weather.updated"
+    RSS_ITEM_NEW = "rss.item.new"
 
 
 # Infrastructure events — technical state; published on khonshu.infra

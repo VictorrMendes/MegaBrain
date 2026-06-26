@@ -1,100 +1,126 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, type AvailablePlugin, type WorkspacePlugin } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import {
+  api,
+  type AvailableIntegration,
+  type Integration,
+  type IntegrationHealth,
+  type LifeContextSnapshot,
+  type SyncRecord,
+} from "@/lib/api";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { cn } from "@/lib/cn";
-import { Badge, type BadgeVariant, Button, Spinner } from "@/components/ui";
+import { Badge, Button, Spinner } from "@/components/ui";
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/Dialog";
 import {
-  BellIcon,
-  CalendarIcon,
+  ActivityIcon,
   CheckCircle2Icon,
+  ChevronDownIcon,
   ChevronRightIcon,
-  CloudIcon,
-  DatabaseIcon,
-  HomeIcon,
-  PlugIcon,
-  SearchIcon,
-  ToggleLeftIcon,
-  ToggleRightIcon,
+  CloudOffIcon,
+  GlobeIcon,
+  HeartPulseIcon,
+  LinkIcon,
+  RefreshCwIcon,
+  SatelliteIcon,
+  Trash2Icon,
+  ZapIcon,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────
-// Category metadata
+// Helpers
 // ─────────────────────────────────────────────────────────────
 
-const CATEGORY_META: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  data:          { label: "Dados",          icon: <DatabaseIcon  size={14} />, color: "text-accent" },
-  notifications: { label: "Notificações",   icon: <BellIcon      size={14} />, color: "text-status-warning" },
-  smart_home:    { label: "Casa Inteligente",icon: <HomeIcon      size={14} />, color: "text-status-success" },
-  productivity:  { label: "Produtividade",  icon: <CalendarIcon  size={14} />, color: "text-status-info" },
-  general:       { label: "Geral",          icon: <CloudIcon     size={14} />, color: "text-content-muted" },
-};
+function healthColor(h: IntegrationHealth) {
+  if (h === "healthy") return "text-status-success";
+  if (h === "degraded") return "text-status-warning";
+  if (h === "unhealthy") return "text-status-error";
+  return "text-content-muted";
+}
 
-function categoryVariant(cat: string): BadgeVariant {
-  if (cat === "data")          return "info";
-  if (cat === "notifications") return "warning";
-  if (cat === "smart_home")    return "success";
-  if (cat === "productivity")  return "active";
-  return "muted";
+function healthLabel(h: IntegrationHealth) {
+  if (h === "healthy") return "saudável";
+  if (h === "degraded") return "degradado";
+  if (h === "unhealthy") return "falho";
+  return "desconhecido";
+}
+
+function relativeTime(iso: string | null) {
+  if (!iso) return "nunca";
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "agora";
+  if (mins < 60) return `${mins}m atrás`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h atrás`;
+  return `${Math.floor(hrs / 24)}d atrás`;
 }
 
 // ─────────────────────────────────────────────────────────────
-// Plugin config dialog
+// Connect dialog
 // ─────────────────────────────────────────────────────────────
 
-function PluginConfigDialog({
-  plugin,
-  workspace,
+function ConnectDialog({
+  provider,
   onClose,
-  onSaved,
+  onConnected,
 }: {
-  plugin:    AvailablePlugin;
-  workspace: WorkspacePlugin | null;
-  onClose:   () => void;
-  onSaved:   (p: WorkspacePlugin) => void;
+  provider: AvailableIntegration;
+  onClose: () => void;
+  onConnected: (i: Integration) => void;
 }) {
   const { current: ws } = useWorkspace();
-  const [config,  setConfig]  = useState<Record<string, string>>(workspace?.config ?? {});
-  const [enabled, setEnabled] = useState(workspace?.is_enabled ?? true);
-  const [saving,  setSaving]  = useState(false);
+  const [config, setConfig] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function setField(name: string, value: string) {
-    setConfig((prev) => ({ ...prev, [name]: value }));
+  function setField(k: string, v: string) {
+    setConfig((prev) => ({ ...prev, [k]: v }));
   }
 
-  async function save() {
+  async function connect() {
     if (!ws) return;
     setSaving(true);
+    setError(null);
     try {
-      const saved = workspace
-        ? await api.upsertPlugin(ws.id, plugin.name, config, enabled)
-        : await api.upsertPlugin(ws.id, plugin.name, config, enabled);
-      onSaved(saved);
+      const result = await api.connectIntegration(ws.id, provider.slug, config);
+      onConnected(result);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao conectar");
     } finally {
       setSaving(false);
     }
   }
 
+  const knownFields: Record<string, { label: string; type?: string; placeholder?: string }[]> = {
+    docker: [
+      { label: "Socket path", placeholder: "/var/run/docker.sock" },
+    ],
+    weather: [
+      { label: "location", type: "text", placeholder: "Sao Paulo" },
+    ],
+  };
+
+  const fields = knownFields[provider.slug] ?? [];
+
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent title={plugin.name.replace(/_/g, " ")}>
-        <p className="text-xs text-content-muted mb-4">{plugin.description}</p>
+      <DialogContent title={`Conectar ${provider.name}`}>
+        <p className="text-xs text-content-muted mb-4">{provider.description}</p>
 
-        {plugin.config_fields.length > 0 && (
+        {fields.length > 0 && (
           <div className="space-y-3 mb-4">
-            {plugin.config_fields.map((f) => (
-              <div key={f.name}>
-                <label className="block text-xs text-content-secondary mb-1.5">
+            {fields.map((f) => (
+              <div key={f.label}>
+                <label className="block text-xs text-content-secondary mb-1.5 capitalize">
                   {f.label}
-                  {f.required && <span className="text-status-error ml-1">*</span>}
                 </label>
                 <input
-                  type={f.type === "password" ? "password" : f.type === "url" ? "url" : "text"}
-                  value={config[f.name] ?? ""}
-                  onChange={(e) => setField(f.name, e.target.value)}
-                  placeholder={f.placeholder}
+                  type={f.type === "password" ? "password" : "text"}
+                  value={config[f.label.toLowerCase()] ?? ""}
+                  onChange={(e) => setField(f.label.toLowerCase(), e.target.value)}
+                  placeholder={f.placeholder ?? ""}
                   className={cn(
                     "w-full rounded-lg border px-3 py-2 text-sm",
                     "border-[var(--border-default)] bg-[var(--surface-base)]",
@@ -107,24 +133,21 @@ function PluginConfigDialog({
           </div>
         )}
 
-        {/* Enable toggle */}
-        <div className="flex items-center justify-between rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-3 py-2.5">
-          <span className="text-xs text-content-secondary">Ativado neste workspace</span>
-          <button
-            onClick={() => setEnabled((v) => !v)}
-            className={cn("transition-colors", enabled ? "text-status-success" : "text-content-muted")}
-          >
-            {enabled
-              ? <ToggleRightIcon size={22} />
-              : <ToggleLeftIcon  size={22} />}
-          </button>
-        </div>
+        {fields.length === 0 && (
+          <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-subtle)] px-3 py-2.5 text-xs text-content-muted mb-4">
+            Esta integração não requer configuração adicional.
+          </div>
+        )}
+
+        {error && (
+          <p className="text-xs text-status-error mb-3">{error}</p>
+        )}
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={saving}>Cancelar</Button>
-          <Button onClick={save} disabled={saving}>
+          <Button onClick={connect} disabled={saving}>
             {saving && <Spinner size="sm" className="mr-2" />}
-            Salvar
+            Conectar
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -133,61 +156,249 @@ function PluginConfigDialog({
 }
 
 // ─────────────────────────────────────────────────────────────
-// Plugin card
+// Sync history row
 // ─────────────────────────────────────────────────────────────
 
-function PluginCard({
-  plugin,
-  workspace,
-  onClick,
-}: {
-  plugin:    AvailablePlugin;
-  workspace: WorkspacePlugin | null;
-  onClick:   () => void;
-}) {
-  const catMeta = CATEGORY_META[plugin.category] ?? CATEGORY_META.general;
-  const isActive = workspace?.is_enabled === true;
+function SyncHistoryRow({ r }: { r: SyncRecord }) {
+  const statusColor =
+    r.status === "success" ? "text-status-success" :
+    r.status === "partial" ? "text-status-warning" :
+    r.status === "running" ? "text-accent" :
+    "text-status-error";
 
   return (
+    <div className="flex items-center gap-3 text-xs py-1.5 border-b border-[var(--border-subtle)] last:border-0">
+      <span className={cn("w-14 font-medium", statusColor)}>{r.status}</span>
+      <span className="text-content-muted w-16">{relativeTime(r.started_at)}</span>
+      <span className="text-content-secondary">{r.items_synced} itens</span>
+      {r.duration_ms && (
+        <span className="text-content-muted ml-auto">{r.duration_ms}ms</span>
+      )}
+      {r.error_message && (
+        <span className="text-status-error truncate max-w-[120px]" title={r.error_message}>
+          {r.error_message}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Connected integration card
+// ─────────────────────────────────────────────────────────────
+
+function IntegrationCard({
+  integration,
+  workspaceId,
+  onDisconnected,
+  onSynced,
+}: {
+  integration: Integration;
+  workspaceId: string;
+  onDisconnected: (id: string) => void;
+  onSynced: (updated: Integration) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [checkingHealth, setCheckingHealth] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [history, setHistory] = useState<SyncRecord[]>([]);
+  const [health, setHealth] = useState<IntegrationHealth>(integration.health);
+
+  useEffect(() => {
+    if (!expanded) return;
+    api.getSyncHistory(workspaceId, integration.id, 5).then(setHistory).catch(() => {});
+  }, [expanded, workspaceId, integration.id]);
+
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      await api.syncIntegration(workspaceId, integration.id);
+      const updated = await api.listIntegrations(workspaceId);
+      const me = updated.find((i) => i.id === integration.id);
+      if (me) onSynced(me);
+      if (expanded) {
+        api.getSyncHistory(workspaceId, integration.id, 5).then(setHistory).catch(() => {});
+      }
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function handleHealthCheck() {
+    setCheckingHealth(true);
+    try {
+      const res = await api.checkIntegrationHealth(workspaceId, integration.id);
+      setHealth(res.health);
+    } finally {
+      setCheckingHealth(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setDisconnecting(true);
+    try {
+      await api.disconnectIntegration(workspaceId, integration.id);
+      onDisconnected(integration.id);
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  return (
+    <div className={cn(
+      "rounded-xl border transition-colors",
+      integration.status === "active"
+        ? "border-[var(--border-default)] bg-[var(--surface-raised)]"
+        : "border-[var(--border-subtle)] bg-[var(--surface-subtle)] opacity-70",
+    )}>
+      {/* Header */}
+      <div className="flex items-center gap-3 p-4">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-sm">
+          {integration.icon || integration.slug.slice(0, 2).toUpperCase()}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-sm font-medium text-content-primary">{integration.name}</span>
+            <span className={cn("text-[10px]", healthColor(health))}>
+              ● {healthLabel(health)}
+            </span>
+          </div>
+          <span className="text-[11px] text-content-muted">
+            sync {relativeTime(integration.last_sync_at)} · {integration.category}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            title="Sincronizar"
+            className="rounded-lg p-1.5 text-content-muted hover:text-content-primary hover:bg-[var(--surface-subtle)] transition-colors disabled:opacity-40"
+          >
+            <RefreshCwIcon size={13} className={syncing ? "animate-spin" : ""} />
+          </button>
+          <button
+            onClick={handleHealthCheck}
+            disabled={checkingHealth}
+            title="Health check"
+            className="rounded-lg p-1.5 text-content-muted hover:text-content-primary hover:bg-[var(--surface-subtle)] transition-colors disabled:opacity-40"
+          >
+            <HeartPulseIcon size={13} />
+          </button>
+          <button
+            onClick={handleDisconnect}
+            disabled={disconnecting}
+            title="Desconectar"
+            className="rounded-lg p-1.5 text-content-muted hover:text-status-error hover:bg-[var(--surface-subtle)] transition-colors disabled:opacity-40"
+          >
+            <Trash2Icon size={13} />
+          </button>
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="rounded-lg p-1.5 text-content-muted hover:text-content-primary hover:bg-[var(--surface-subtle)] transition-colors"
+          >
+            {expanded ? <ChevronDownIcon size={13} /> : <ChevronRightIcon size={13} />}
+          </button>
+        </div>
+      </div>
+
+      {/* Life context lines */}
+      {integration.life_context_lines.length > 0 && (
+        <div className="px-4 pb-3 -mt-1">
+          {integration.life_context_lines.slice(0, 2).map((line, i) => (
+            <p key={i} className="text-[11px] text-content-muted leading-relaxed truncate">
+              {line}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {/* Expanded: sync history */}
+      {expanded && (
+        <div className="border-t border-[var(--border-subtle)] mx-4 pt-3 pb-4">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-content-muted mb-2">
+            Histórico de sync
+          </p>
+          {history.length === 0 ? (
+            <p className="text-xs text-content-muted">Sem registros.</p>
+          ) : (
+            history.map((r) => <SyncHistoryRow key={r.id} r={r} />)
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Available provider card
+// ─────────────────────────────────────────────────────────────
+
+function AvailableCard({
+  provider,
+  onConnect,
+}: {
+  provider: AvailableIntegration;
+  onConnect: () => void;
+}) {
+  return (
     <button
-      onClick={onClick}
+      onClick={onConnect}
       className={cn(
         "group w-full rounded-xl border p-4 text-left transition-all",
-        isActive
-          ? "border-accent-subtle bg-accent-dim hover:border-accent"
-          : "border-[var(--border-subtle)] bg-[var(--surface-raised)] hover:border-[var(--border-default)]",
+        "border-[var(--border-subtle)] bg-[var(--surface-raised)]",
+        "hover:border-[var(--border-default)] hover:bg-[var(--surface-overlay)]",
       )}
     >
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <div className={cn("rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-subtle)] p-2", catMeta.color)}>
-          {catMeta.icon}
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-sm shrink-0">
+          {provider.icon || provider.slug.slice(0, 2).toUpperCase()}
         </div>
-        {isActive ? (
-          <CheckCircle2Icon size={14} className="text-status-success mt-0.5" />
-        ) : (
-          <ChevronRightIcon size={14} className="text-content-muted mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-        )}
-      </div>
-
-      <p className="text-sm font-medium text-content-primary mb-0.5 capitalize">
-        {plugin.name.replace(/_/g, " ")}
-      </p>
-      <p className="text-xs text-content-muted leading-relaxed line-clamp-2 mb-3">
-        {plugin.description}
-      </p>
-
-      <div className="flex items-center gap-1.5">
-        <Badge variant={categoryVariant(plugin.category)} size="sm">
-          {catMeta.label}
-        </Badge>
-        {isActive && (
-          <Badge variant="success" size="sm">ativo</Badge>
-        )}
-        {plugin.config_fields.length === 0 && (
-          <Badge variant="muted" size="sm">sem config</Badge>
-        )}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-content-primary mb-0.5">{provider.name}</p>
+          <p className="text-[11px] text-content-muted line-clamp-2 leading-relaxed">
+            {provider.description}
+          </p>
+        </div>
+        <LinkIcon size={12} className="text-content-muted mt-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
     </button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Life context panel
+// ─────────────────────────────────────────────────────────────
+
+function LifeContextPanel({ snapshot }: { snapshot: LifeContextSnapshot }) {
+  const [open, setOpen] = useState(false);
+
+  if (snapshot.lines.length === 0) return null;
+
+  return (
+    <div className="mb-6 rounded-xl border border-accent-subtle bg-accent-dim">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left"
+      >
+        <SatelliteIcon size={13} className="text-accent shrink-0" />
+        <span className="text-xs font-medium text-content-primary flex-1">
+          Vida digital agora · {snapshot.integration_count} integração{snapshot.integration_count !== 1 ? "ões" : ""}
+        </span>
+        {open ? <ChevronDownIcon size={12} className="text-content-muted" /> : <ChevronRightIcon size={12} className="text-content-muted" />}
+      </button>
+      {open && (
+        <div className="border-t border-accent-subtle px-4 pb-3 pt-2 space-y-1">
+          {snapshot.lines.map((line, i) => (
+            <p key={i} className="text-xs text-content-secondary leading-relaxed">
+              • {line}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -197,53 +408,63 @@ function PluginCard({
 
 export function IntegrationsPage() {
   const { current: workspace, loading: wsLoading } = useWorkspace();
-  const [available,   setAvailable]   = useState<AvailablePlugin[]>([]);
-  const [workspacePs, setWorkspacePs] = useState<WorkspacePlugin[]>([]);
-  const [loading,     setLoading]     = useState(false);
-  const [configFor,   setConfigFor]   = useState<AvailablePlugin | null>(null);
-  const [query,       setQuery]       = useState("");
+  const [connected, setConnected] = useState<Integration[]>([]);
+  const [available, setAvailable] = useState<AvailableIntegration[]>([]);
+  const [snapshot, setSnapshot] = useState<LifeContextSnapshot | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [connectFor, setConnectFor] = useState<AvailableIntegration | null>(null);
+  const [syncingAll, setSyncingAll] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!workspace) return;
     setLoading(true);
-    Promise.all([
-      api.listAvailablePlugins(workspace.id),
-      api.listWorkspacePlugins(workspace.id),
-    ])
-      .then(([avail, ws]) => {
-        setAvailable(avail);
-        setWorkspacePs(ws);
-      })
-      .finally(() => setLoading(false));
+    try {
+      const [avail, conn] = await Promise.all([
+        api.listAvailableIntegrations(),
+        api.listIntegrations(workspace.id),
+      ]);
+      setAvailable(avail);
+      setConnected(conn);
+      if (conn.length > 0) {
+        api.getLifeContextSnapshot(workspace.id).then(setSnapshot).catch(() => {});
+      }
+    } finally {
+      setLoading(false);
+    }
   }, [workspace?.id]);
 
-  function getWorkspacePlugin(name: string): WorkspacePlugin | null {
-    return workspacePs.find((p) => p.plugin_name === name) ?? null;
+  useEffect(() => { load(); }, [load]);
+
+  async function handleSyncAll() {
+    if (!workspace) return;
+    setSyncingAll(true);
+    try {
+      await api.syncAllIntegrations(workspace.id);
+      await load();
+    } finally {
+      setSyncingAll(false);
+    }
   }
 
-  function handleSaved(saved: WorkspacePlugin) {
-    setWorkspacePs((prev) => {
-      const exists = prev.find((p) => p.id === saved.id);
-      if (exists) return prev.map((p) => (p.id === saved.id ? saved : p));
-      return [...prev, saved];
+  function handleConnected(integration: Integration) {
+    setConnected((prev) => {
+      const exists = prev.find((i) => i.id === integration.id);
+      if (exists) return prev.map((i) => (i.id === integration.id ? integration : i));
+      return [...prev, integration];
     });
-    setConfigFor(null);
+    setConnectFor(null);
   }
 
-  const filtered = available.filter((p) =>
-    !query.trim() ||
-    p.name.includes(query.toLowerCase()) ||
-    p.description.toLowerCase().includes(query.toLowerCase()),
-  );
+  function handleDisconnected(id: string) {
+    setConnected((prev) => prev.filter((i) => i.id !== id));
+  }
 
-  const byCategory = filtered.reduce<Record<string, AvailablePlugin[]>>((acc, p) => {
-    const cat = p.category ?? "general";
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(p);
-    return acc;
-  }, {});
+  function handleSynced(updated: Integration) {
+    setConnected((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+  }
 
-  const activeCount = workspacePs.filter((p) => p.is_enabled).length;
+  const connectedSlugs = new Set(connected.map((i) => i.slug));
+  const notConnected = available.filter((a) => !connectedSlugs.has(a.slug));
 
   if (wsLoading || loading) {
     return (
@@ -256,78 +477,94 @@ export function IntegrationsPage() {
   return (
     <>
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-6 py-8">
+        <div className="mx-auto max-w-2xl px-6 py-8">
 
           {/* Header */}
           <div className="mb-6 flex items-start justify-between">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <PlugIcon size={14} className="text-content-muted" />
-                <h1 className="text-md font-semibold text-content-primary">Integrações</h1>
+                <GlobeIcon size={14} className="text-content-muted" />
+                <h1 className="text-md font-semibold text-content-primary">Life Platform</h1>
               </div>
               <p className="text-xs text-content-muted">
-                {available.length} plugins disponíveis · {activeCount} ativos
+                {connected.length} conectadas · {available.length} disponíveis
               </p>
             </div>
+            {connected.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSyncAll}
+                disabled={syncingAll}
+              >
+                {syncingAll
+                  ? <Spinner size="sm" className="mr-1.5" />
+                  : <ZapIcon size={12} className="mr-1.5" />}
+                Sync all
+              </Button>
+            )}
           </div>
 
-          {/* Search */}
-          <div className="relative mb-6">
-            <SearchIcon size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-content-muted" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filtrar integrações…"
-              className={cn(
-                "w-full rounded-lg border py-2 pl-9 pr-3 text-sm",
-                "border-[var(--border-default)] bg-[var(--surface-raised)]",
-                "text-content-primary placeholder:text-content-placeholder",
-                "focus:outline-none focus:border-[var(--border-accent)]",
-              )}
-            />
-          </div>
+          {/* Life context snapshot */}
+          {snapshot && <LifeContextPanel snapshot={snapshot} />}
 
-          {/* Grid by category */}
-          {Object.entries(byCategory).map(([cat, plugins]) => {
-            const catMeta = CATEGORY_META[cat] ?? CATEGORY_META.general;
-            return (
-              <div key={cat} className="mb-8">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className={catMeta.color}>{catMeta.icon}</span>
-                  <h2 className="text-[11px] font-semibold uppercase tracking-widest text-content-muted">
-                    {catMeta.label}
-                  </h2>
-                </div>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {plugins.map((p) => (
-                    <PluginCard
-                      key={p.name}
-                      plugin={p}
-                      workspace={getWorkspacePlugin(p.name)}
-                      onClick={() => setConfigFor(p)}
-                    />
-                  ))}
-                </div>
+          {/* Connected integrations */}
+          {connected.length > 0 && (
+            <div className="mb-8">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-content-muted mb-3 flex items-center gap-1.5">
+                <CheckCircle2Icon size={10} />
+                Conectadas
+              </p>
+              <div className="space-y-2">
+                {connected.map((integration) => (
+                  <IntegrationCard
+                    key={integration.id}
+                    integration={integration}
+                    workspaceId={workspace!.id}
+                    onDisconnected={handleDisconnected}
+                    onSynced={handleSynced}
+                  />
+                ))}
               </div>
-            );
-          })}
+            </div>
+          )}
 
-          {filtered.length === 0 && (
-            <p className="py-16 text-center text-sm text-content-muted">
-              Nenhuma integração encontrada.
-            </p>
+          {/* Available */}
+          {notConnected.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-content-muted mb-3 flex items-center gap-1.5">
+                <ActivityIcon size={10} />
+                Disponíveis
+              </p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {notConnected.map((provider) => (
+                  <AvailableCard
+                    key={provider.slug}
+                    provider={provider}
+                    onConnect={() => setConnectFor(provider)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {available.length === 0 && connected.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
+              <CloudOffIcon size={28} className="text-content-muted" />
+              <p className="text-sm text-content-muted">
+                Nenhuma integração registrada ainda.
+              </p>
+            </div>
           )}
 
         </div>
       </div>
 
-      {configFor && (
-        <PluginConfigDialog
-          plugin={configFor}
-          workspace={getWorkspacePlugin(configFor.name)}
-          onClose={() => setConfigFor(null)}
-          onSaved={handleSaved}
+      {connectFor && (
+        <ConnectDialog
+          provider={connectFor}
+          onClose={() => setConnectFor(null)}
+          onConnected={handleConnected}
         />
       )}
     </>
