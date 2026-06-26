@@ -65,7 +65,6 @@ _TERMINAL = {
     MissionStatus.SUCCEEDED,
     MissionStatus.FAILED,
     MissionStatus.CANCELLED,
-    MissionStatus.REJECTED,
 }
 
 
