@@ -13,104 +13,156 @@ import {
   ActivityIcon,
   MonitorIcon,
   PackageIcon,
-  ChevronUpDownIcon,
   CheckIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useWorkspace } from "@/context/WorkspaceContext";
 
 const NAV_ITEMS = [
-  { href: "/dashboard", icon: LayoutDashboardIcon, label: "Dashboard" },
-  { href: "/chat",      icon: MessageSquareIcon,  label: "Chat"        },
-  { href: "/missions",  icon: TargetIcon,          label: "Missões"     },
-  { href: "/memory",    icon: BrainIcon,           label: "Memória"     },
-  { href: "/knowledge", icon: BookOpenIcon,        label: "Conhecimento"},
-  { href: "/inbox",     icon: InboxIcon,           label: "Inbox"       },
-  { href: "/timeline",  icon: ActivityIcon,        label: "Timeline"    },
-  { href: "/artifacts", icon: PackageIcon,         label: "Artifacts"   },
-  { href: "/runtime",   icon: MonitorIcon,         label: "Runtime"     },
+  { href: "/dashboard", icon: LayoutDashboardIcon, label: "Home"           },
+  { href: "/chat",      icon: MessageSquareIcon,   label: "Chat"           },
+  { href: "/missions",  icon: TargetIcon,           label: "Missões"        },
+  { href: "/memory",    icon: BrainIcon,            label: "Memória"        },
+  { href: "/knowledge", icon: BookOpenIcon,         label: "Conhecimento"   },
+  { href: "/inbox",     icon: InboxIcon,            label: "Inbox"          },
+  { href: "/timeline",  icon: ActivityIcon,         label: "Timeline"       },
+  { href: "/artifacts", icon: PackageIcon,          label: "Artifacts"      },
+  { href: "/runtime",   icon: MonitorIcon,          label: "Runtime"        },
 ];
 
 export function AppNav() {
-  const pathname = usePathname();
+  const pathname  = usePathname();
   const { workspaces, current, setCurrent } = useWorkspace();
   const [showSwitcher, setShowSwitcher] = useState(false);
 
   const initial = current?.name?.[0]?.toUpperCase() ?? "?";
 
   return (
-    <nav className="relative flex w-12 shrink-0 flex-col items-center border-r border-neutral-800 bg-neutral-900 py-3 gap-1">
-      {/* Logo */}
-      <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-700 text-xs font-bold text-neutral-200 tracking-widest select-none">
+    <nav
+      className={cn(
+        "relative flex w-12 shrink-0 flex-col",
+        "border-r border-[var(--border-subtle)]",
+        "bg-[var(--surface-raised)]",
+        "py-3 gap-0.5",
+      )}
+    >
+      {/* Logo mark */}
+      <div className="mx-auto mb-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-dim text-accent text-sm font-bold tracking-widest select-none">
         K
       </div>
 
+      {/* Nav items */}
       {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
         const active = pathname.startsWith(href);
         return (
           <Link
             key={href}
             href={href}
-            title={label}
             className={cn(
-              "group relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors",
+              "group mx-auto flex h-9 w-9 items-center justify-center rounded-lg",
+              "transition-colors duration-[100ms] relative",
               active
-                ? "bg-neutral-700 text-neutral-100"
-                : "text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+                ? "bg-accent-dim text-accent"
+                : "text-content-muted hover:bg-surface-subtle hover:text-content-secondary",
             )}
           >
-            <Icon size={17} />
-            <span className="pointer-events-none absolute left-full ml-2 z-50 hidden whitespace-nowrap rounded-md bg-neutral-800 px-2 py-1 text-xs text-neutral-200 shadow-lg group-hover:block">
+            <Icon size={16} strokeWidth={active ? 2.2 : 1.8} />
+
+            {/* Tooltip */}
+            <span
+              className={cn(
+                "pointer-events-none absolute left-full ml-3 z-50",
+                "hidden whitespace-nowrap rounded-md",
+                "bg-[var(--surface-overlay)] border border-[var(--border-default)]",
+                "px-2.5 py-1 text-xs text-content-primary shadow-xl",
+                "group-hover:flex items-center",
+              )}
+            >
               {label}
             </span>
           </Link>
         );
       })}
 
-      {/* Workspace switcher at bottom */}
+      {/* Workspace avatar — bottom */}
       <div className="mt-auto">
         <button
-          title={current?.name ?? "Workspace"}
           onClick={() => setShowSwitcher((v) => !v)}
-          className="group relative flex h-9 w-9 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+          className={cn(
+            "group mx-auto flex h-9 w-9 items-center justify-center",
+            "rounded-lg text-content-muted transition-colors duration-[100ms]",
+            "hover:bg-surface-subtle hover:text-content-secondary",
+            "relative",
+          )}
         >
-          <span className="text-[11px] font-bold">{initial}</span>
-          <ChevronUpDownIcon size={9} className="absolute bottom-1 right-1 opacity-50" />
-          <span className="pointer-events-none absolute left-full ml-2 z-50 hidden whitespace-nowrap rounded-md bg-neutral-800 px-2 py-1 text-xs text-neutral-200 shadow-lg group-hover:block">
+          <span
+            className={cn(
+              "flex h-6 w-6 items-center justify-center rounded-md",
+              "bg-[var(--surface-subtle)] text-content-secondary text-[11px] font-semibold",
+            )}
+          >
+            {initial}
+          </span>
+
+          {/* Tooltip */}
+          <span
+            className={cn(
+              "pointer-events-none absolute left-full ml-3 z-50",
+              "hidden whitespace-nowrap rounded-md",
+              "bg-[var(--surface-overlay)] border border-[var(--border-default)]",
+              "px-2.5 py-1 text-xs text-content-primary shadow-xl",
+              "group-hover:flex items-center",
+            )}
+          >
             {current?.name ?? "Workspace"}
           </span>
         </button>
       </div>
 
-      {/* Workspace dropdown */}
+      {/* Workspace switcher dropdown */}
       {showSwitcher && workspaces.length > 0 && (
         <div
-          className="absolute bottom-2 left-full ml-2 z-50 min-w-48 rounded-xl border border-neutral-700 bg-neutral-900 py-1 shadow-2xl"
+          className={cn(
+            "absolute bottom-2 left-full ml-2 z-50 min-w-52",
+            "rounded-xl border border-[var(--border-default)]",
+            "bg-[var(--surface-overlay)] py-1.5 shadow-2xl",
+          )}
           onMouseLeave={() => setShowSwitcher(false)}
         >
-          <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-neutral-600">
+          <p className="px-3 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-widest text-content-muted">
             Workspaces
           </p>
-          {workspaces.map((ws) => (
-            <button
-              key={ws.id}
-              onClick={() => { setCurrent(ws); setShowSwitcher(false); }}
-              className={cn(
-                "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
-                current?.id === ws.id
-                  ? "text-neutral-200"
-                  : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800"
-              )}
-            >
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-neutral-700 text-[10px] font-bold text-neutral-300">
-                {ws.name[0].toUpperCase()}
-              </span>
-              <span className="flex-1 truncate">{ws.name}</span>
-              {current?.id === ws.id && (
-                <CheckIcon size={11} className="shrink-0 text-emerald-400" />
-              )}
-            </button>
-          ))}
+
+          {workspaces.map((ws) => {
+            const isCurrent = current?.id === ws.id;
+            return (
+              <button
+                key={ws.id}
+                onClick={() => { setCurrent(ws); setShowSwitcher(false); }}
+                className={cn(
+                  "flex w-full items-center gap-2.5 px-3 py-1.5 text-left",
+                  "text-xs transition-colors duration-[100ms]",
+                  isCurrent
+                    ? "text-content-primary"
+                    : "text-content-secondary hover:text-content-primary hover:bg-[var(--surface-subtle)]",
+                )}
+              >
+                <span
+                  className={cn(
+                    "flex h-5 w-5 shrink-0 items-center justify-center rounded",
+                    "text-[10px] font-bold",
+                    isCurrent
+                      ? "bg-accent-dim text-accent"
+                      : "bg-[var(--surface-subtle)] text-content-secondary",
+                  )}
+                >
+                  {ws.name[0].toUpperCase()}
+                </span>
+                <span className="flex-1 truncate">{ws.name}</span>
+                {isCurrent && <CheckIcon size={11} className="shrink-0 text-accent" />}
+              </button>
+            );
+          })}
         </div>
       )}
     </nav>

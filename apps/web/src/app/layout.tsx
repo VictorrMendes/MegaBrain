@@ -32,7 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="antialiased">
         <WorkspaceProvider>
-          <div className="flex h-screen overflow-hidden bg-neutral-950 text-neutral-100 font-sans">
+          <div className="flex h-screen overflow-hidden bg-[var(--surface-base)] text-content-primary font-sans">
             <AppNav />
             <div className="flex-1 overflow-hidden">{children}</div>
           </div>

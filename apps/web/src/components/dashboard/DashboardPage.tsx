@@ -1,23 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, type DashboardSummary } from "@/lib/api";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { cn } from "@/lib/cn";
+import { Badge, type BadgeVariant, Spinner } from "@/components/ui";
 import {
-  LoaderIcon,
+  ActivityIcon,
+  AlertTriangleIcon,
+  BookOpenIcon,
+  BrainIcon,
+  ClockIcon,
+  InboxIcon,
+  PackageIcon,
   RefreshCwIcon,
   TargetIcon,
-  InboxIcon,
-  CheckCircleIcon,
-  AlertCircleIcon,
   XCircleIcon,
-  BrainIcon,
-  BookOpenIcon,
-  PackageIcon,
-  CalendarIcon,
+  ZapIcon,
 } from "lucide-react";
+
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
 
 function greeting() {
   const h = new Date().getHours();
@@ -26,294 +31,415 @@ function greeting() {
   return "Boa noite";
 }
 
-function formatDate(s: string) {
-  return new Date(s).toLocaleString("pt-BR", {
-    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+function longDate() {
+  return new Date().toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
   });
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  pending:          "text-neutral-400",
-  planning:         "text-blue-400",
-  waiting_approval: "text-yellow-400",
-  ready:            "text-emerald-400",
-  running:          "text-blue-300",
-  paused:           "text-orange-400",
-  succeeded:        "text-emerald-400",
-  failed:           "text-red-400",
-  cancelled:        "text-neutral-600",
+function rel(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const m = Math.floor(diff / 60_000);
+  if (m < 1)  return "agora";
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? "ontem" : `${d}d`;
+}
+
+const STATUS_BADGE: Record<string, BadgeVariant> = {
+  pending:          "default",
+  planning:         "info",
+  waiting_approval: "warning",
+  ready:            "info",
+  running:          "active",
+  succeeded:        "success",
+  failed:           "error",
+  cancelled:        "muted",
 };
+
+const ACTIVE_STATUSES = new Set(["running", "planning", "waiting_approval", "ready"]);
+
+// ─────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────
+
+type Mission  = DashboardSummary["recent_missions"][0];
+type Health   = DashboardSummary["health"][0];
+
+type AttentionItem = {
+  icon: React.ElementType;
+  label: string;
+  href: string;
+  kind: "warning" | "error";
+};
+
+type FeedItem = {
+  id:   string;
+  kind: "mission" | "memory" | "fact" | "artifact";
+  text: string;
+  sub:  string;
+  at:   Date;
+  href: string;
+};
+
+// ─────────────────────────────────────────────────────────────
+// Main component
+// ─────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
   const { current: workspace, loading: wsLoading } = useWorkspace();
-  const [data, setData] = useState<DashboardSummary | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [data,       setData]       = useState<DashboardSummary | null>(null);
+  const [loading,    setLoading]    = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  async function load(ws = workspace, refresh = false) {
-    if (!ws) return;
-    if (refresh) setRefreshing(true); else setLoading(true);
-    try {
-      const summary = await api.getDashboard(ws.id);
-      setData(summary);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }
+  const load = useCallback(
+    async (ws = workspace, isRefresh = false) => {
+      if (!ws) return;
+      if (isRefresh) setRefreshing(true); else setLoading(true);
+      try {
+        setData(await api.getDashboard(ws.id));
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workspace?.id],
+  );
 
   useEffect(() => {
     if (workspace) load(workspace);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspace?.id]);
+  }, [workspace?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ─── loading state ───
   if (wsLoading || loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoaderIcon size={20} className="animate-spin text-neutral-500" />
+        <Spinner size="md" />
       </div>
     );
   }
 
-  const now = new Date().toLocaleDateString("pt-BR", {
-    weekday: "long", day: "2-digit", month: "long", year: "numeric",
-  });
+  // ─── derived data ───
+  const activeMissions = data?.recent_missions.filter((m) =>
+    ACTIVE_STATUSES.has(m.status),
+  ) ?? [];
 
+  const allHealthy = data?.health.every((h) => h.status === "ready") ?? true;
+
+  const attentionItems: AttentionItem[] = [];
+  if (data) {
+    if (data.inbox_pending > 0)
+      attentionItems.push({
+        icon:  InboxIcon,
+        label: `${data.inbox_pending} ${data.inbox_pending === 1 ? "item" : "itens"} no inbox`,
+        href:  "/inbox",
+        kind:  "warning",
+      });
+    if (data.missions.waiting_approval > 0)
+      attentionItems.push({
+        icon:  AlertTriangleIcon,
+        label: `${data.missions.waiting_approval} aguardando aprovação`,
+        href:  "/missions",
+        kind:  "warning",
+      });
+    if (data.missions.failed > 0)
+      attentionItems.push({
+        icon:  XCircleIcon,
+        label: `${data.missions.failed} missão falhou`,
+        href:  "/missions",
+        kind:  "error",
+      });
+    if (!allHealthy)
+      attentionItems.push({
+        icon:  AlertTriangleIcon,
+        label: "Sistema com atenção",
+        href:  "/runtime",
+        kind:  "error",
+      });
+  }
+
+  // ─── unified feed ───
+  const feed: FeedItem[] = [];
+  if (data) {
+    for (const m of data.recent_missions)
+      feed.push({ id: `m-${m.id}`,   kind: "mission",  text: m.intent,    sub: m.status,                          at: new Date(m.updated_at),  href: "/missions"  });
+    for (const m of data.recent_memories)
+      feed.push({ id: `mm-${m.id}`,  kind: "memory",   text: m.content,   sub: m.type,                            at: new Date(m.created_at),  href: "/memory"    });
+    for (const f of data.recent_facts)
+      feed.push({ id: `f-${f.id}`,   kind: "fact",     text: f.statement, sub: `${Math.round(f.confidence * 100)}%`, at: new Date(f.created_at), href: "/knowledge" });
+    for (const a of data.recent_artifacts)
+      feed.push({ id: `a-${a.id}`,   kind: "artifact", text: a.name,      sub: a.type,                            at: new Date(a.created_at),  href: "/artifacts" });
+    feed.sort((a, b) => b.at.getTime() - a.at.getTime());
+  }
+  const recentFeed = feed.slice(0, 14);
+
+  // ─── render ───
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-5xl px-6 py-8">
-        {/* Header greeting */}
-        <div className="mb-8 flex items-end justify-between">
+      <div className="mx-auto max-w-2xl px-6 py-10 animate-fade-in">
+
+        {/* ────── HERO ────── */}
+        <div className="mb-10 flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-light text-neutral-100 tracking-tight">
+            <h1 className="text-3xl font-light text-content-primary tracking-tight">
               {greeting()}.
             </h1>
-            <p className="mt-1 text-sm text-neutral-500 capitalize">{now}</p>
-            {workspace && (
-              <p className="mt-0.5 text-xs text-neutral-600">
-                Workspace: <span className="text-neutral-400">{workspace.name}</span>
-              </p>
-            )}
+            <p className="mt-1.5 text-sm text-content-secondary capitalize">
+              {longDate()}
+              {workspace && (
+                <span className="text-content-muted"> · {workspace.name}</span>
+              )}
+            </p>
           </div>
+
           <button
             onClick={() => load(workspace ?? undefined, true)}
             disabled={refreshing}
-            className="rounded-lg p-2 text-neutral-600 hover:text-neutral-400 hover:bg-neutral-800 transition-colors"
+            className={cn(
+              "mt-1.5 rounded-md p-1.5 transition-colors",
+              "text-content-muted hover:text-content-secondary hover:bg-surface-subtle",
+              "disabled:opacity-30",
+            )}
+            title="Atualizar"
           >
-            <RefreshCwIcon size={15} className={refreshing ? "animate-spin" : ""} />
+            <RefreshCwIcon size={14} className={refreshing ? "animate-spin" : ""} />
           </button>
         </div>
 
         {!data ? (
-          <p className="text-center text-xs text-neutral-600 py-10">
+          <p className="text-center text-xs text-content-muted py-20">
             Nenhum dado disponível.
           </p>
         ) : (
-          <>
-            {/* KPI row */}
-            <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <KpiCard
-                icon={<TargetIcon size={14} />}
-                label="Missões"
-                value={String(data.missions.total)}
-                sub={`${data.missions.running} em execução`}
-                href="/missions"
-                accent={data.missions.running > 0 ? "blue" : "default"}
-              />
-              <KpiCard
-                icon={<InboxIcon size={14} />}
-                label="Inbox"
-                value={String(data.inbox_pending)}
-                sub="pendentes"
-                href="/inbox"
-                accent={data.inbox_pending > 0 ? "yellow" : "default"}
-              />
-              <KpiCard
-                icon={<SystemIcon health={data.health} />}
-                label="Sistema"
-                value={data.health.every((h) => h.status === "ready") ? "OK" : "Atenção"}
-                sub={`${data.health.filter((h) => h.status === "ready").length}/${data.health.length} componentes`}
-                href="/runtime"
-                accent={data.health.every((h) => h.status === "ready") ? "green" : "red"}
-              />
-              <KpiCard
-                icon={<CalendarIcon size={14} />}
-                label="Scheduler"
-                value={String(data.scheduler.total_triggers)}
-                sub={`${data.scheduler.active_triggers} ativos`}
-                href="/runtime"
-                accent="default"
-              />
-            </div>
+          <div className="space-y-10">
 
-            {/* Missions + Memories */}
-            <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <Section
-                title="Missões recentes"
-                href="/missions"
-                icon={<TargetIcon size={12} />}
-              >
-                {data.recent_missions.length === 0 ? (
-                  <Empty text="Nenhuma missão ainda." />
-                ) : (
-                  data.recent_missions.map((m) => (
+            {/* ────── ATENÇÃO ────── */}
+            {attentionItems.length > 0 && (
+              <section>
+                <div className="flex flex-wrap gap-2">
+                  {attentionItems.map((item, i) => (
                     <Link
-                      key={String(m.id)}
-                      href="/missions"
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-neutral-800/60 transition-colors"
+                      key={i}
+                      href={item.href}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5",
+                        "text-xs font-medium border transition-colors",
+                        item.kind === "warning"
+                          ? "bg-amber-950/40 border-amber-900/30 text-amber-400 hover:bg-amber-950/60"
+                          : "bg-red-950/40 border-red-900/30 text-red-400 hover:bg-red-950/60",
+                      )}
                     >
-                      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full bg-current", STATUS_COLOR[m.status])} />
-                      <span className="flex-1 truncate text-xs text-neutral-300">{m.intent}</span>
-                      <span className={cn("shrink-0 text-[10px]", STATUS_COLOR[m.status])}>{m.status}</span>
+                      <item.icon size={12} />
+                      {item.label}
                     </Link>
-                  ))
-                )}
-              </Section>
+                  ))}
+                </div>
+              </section>
+            )}
 
-              <Section
-                title="Memórias recentes"
-                href="/memory"
-                icon={<BrainIcon size={12} />}
-              >
-                {data.recent_memories.length === 0 ? (
-                  <Empty text="Nenhuma memória ainda." />
-                ) : (
-                  data.recent_memories.map((m) => (
-                    <div
-                      key={String(m.id)}
-                      className="flex items-start gap-2 rounded-md px-2 py-1.5"
-                    >
-                      <span className="shrink-0 rounded px-1 text-[9px] bg-neutral-800 text-neutral-500 mt-0.5">
-                        {m.type}
-                      </span>
-                      <span className="flex-1 text-xs text-neutral-400 line-clamp-2">{m.content}</span>
-                    </div>
-                  ))
-                )}
-              </Section>
-            </div>
+            {/* ────── EM ANDAMENTO ────── */}
+            <section>
+              <SectionHeader
+                icon={<ZapIcon size={12} />}
+                title={
+                  activeMissions.length > 0
+                    ? `Em andamento · ${activeMissions.length}`
+                    : "Em andamento"
+                }
+                href="/missions"
+              />
 
-            {/* Knowledge + Artifacts */}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <Section
-                title="Conhecimento recente"
-                href="/knowledge"
-                icon={<BookOpenIcon size={12} />}
-              >
-                {data.recent_facts.length === 0 ? (
-                  <Empty text="Nenhum fato ainda." />
-                ) : (
-                  data.recent_facts.map((f) => (
-                    <div
-                      key={String(f.id)}
-                      className="flex items-start gap-2 rounded-md px-2 py-1.5"
-                    >
-                      <span className={cn(
-                        "mt-0.5 shrink-0 rounded px-1 text-[9px]",
-                        f.confidence >= 0.8 ? "bg-emerald-950 text-emerald-500" : "bg-yellow-950 text-yellow-500"
-                      )}>
-                        {Math.round(f.confidence * 100)}%
-                      </span>
-                      <span className="text-xs text-neutral-400 line-clamp-2">{f.statement}</span>
-                    </div>
-                  ))
-                )}
-              </Section>
+              {activeMissions.length === 0 ? (
+                <p className="mt-3 text-sm text-content-muted">
+                  Nenhuma missão ativa no momento.
+                </p>
+              ) : (
+                <div className="mt-3 space-y-1.5">
+                  {activeMissions.map((m) => (
+                    <ActiveMissionRow key={String(m.id)} mission={m} />
+                  ))}
+                </div>
+              )}
+            </section>
 
-              <Section
-                title="Artifacts produzidos"
-                href="/artifacts"
-                icon={<PackageIcon size={12} />}
-              >
-                {data.recent_artifacts.length === 0 ? (
-                  <Empty text="Nenhum artifact ainda." />
-                ) : (
-                  data.recent_artifacts.map((a) => (
-                    <div
-                      key={String(a.id)}
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5"
-                    >
-                      <span className="shrink-0 rounded px-1 text-[9px] bg-neutral-800 text-neutral-500">
-                        {a.type}
-                      </span>
-                      <span className="flex-1 truncate text-xs text-neutral-400">{a.name}</span>
-                      <span className="shrink-0 text-[10px] text-neutral-600">{formatDate(a.created_at)}</span>
-                    </div>
-                  ))
-                )}
-              </Section>
-            </div>
-          </>
+            {/* ────── ATIVIDADE RECENTE ────── */}
+            {recentFeed.length > 0 && (
+              <section>
+                <SectionHeader
+                  icon={<ClockIcon size={12} />}
+                  title="Atividade recente"
+                  href="/timeline"
+                />
+                <div className="relative mt-3">
+                  {/* timeline line */}
+                  <div className="absolute left-[6px] top-3 bottom-3 w-px bg-[var(--border-subtle)]" />
+                  <div className="space-y-0.5">
+                    {recentFeed.map((item) => (
+                      <FeedRow key={item.id} item={item} />
+                    ))}
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* ────── STATUS DO SISTEMA ────── */}
+            <SystemFooter health={data.health} scheduler={data.scheduler} />
+
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-function KpiCard({
-  icon, label, value, sub, href, accent = "default",
+// ─────────────────────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────────────────────
+
+function SectionHeader({
+  icon, title, href,
 }: {
   icon: React.ReactNode;
-  label: string;
-  value: string;
-  sub: string;
-  href: string;
-  accent?: "default" | "blue" | "yellow" | "green" | "red";
-}) {
-  const accentClass = {
-    default: "text-neutral-400",
-    blue:    "text-blue-400",
-    yellow:  "text-yellow-400",
-    green:   "text-emerald-400",
-    red:     "text-red-400",
-  }[accent];
-
-  return (
-    <Link
-      href={href}
-      className="group flex flex-col gap-1 rounded-xl border border-neutral-800 bg-neutral-900 p-4 hover:border-neutral-700 transition-colors"
-    >
-      <div className={cn("flex items-center gap-1.5", accentClass)}>
-        {icon}
-        <span className="text-xs text-neutral-500">{label}</span>
-      </div>
-      <p className={cn("text-2xl font-semibold tracking-tight", accentClass)}>{value}</p>
-      <p className="text-[11px] text-neutral-600">{sub}</p>
-    </Link>
-  );
-}
-
-function SystemIcon({ health }: { health: DashboardSummary["health"] }) {
-  const allOk = health.every((h) => h.status === "ready");
-  const anyFail = health.some((h) => h.status === "failed");
-  if (anyFail) return <XCircleIcon size={14} />;
-  if (!allOk) return <AlertCircleIcon size={14} />;
-  return <CheckCircleIcon size={14} />;
-}
-
-function Section({
-  title, href, icon, children,
-}: {
   title: string;
   href: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-      <div className="mb-3 flex items-center gap-1.5">
-        <span className="text-neutral-500">{icon}</span>
-        <Link href={href} className="text-xs font-semibold uppercase tracking-widest text-neutral-500 hover:text-neutral-400">
-          {title}
-        </Link>
-      </div>
-      <div className="space-y-0.5">{children}</div>
+    <div className="flex items-center gap-1.5">
+      <span className="text-content-muted">{icon}</span>
+      <Link
+        href={href}
+        className="text-[11px] font-semibold uppercase tracking-widest text-content-muted hover:text-content-secondary transition-colors"
+      >
+        {title}
+      </Link>
     </div>
   );
 }
 
-function Empty({ text }: { text: string }) {
+const MISSION_DOT: Record<string, string> = {
+  running:          "bg-status-active animate-pulse-dot",
+  planning:         "bg-status-info",
+  waiting_approval: "bg-status-warning",
+  ready:            "bg-status-success",
+};
+
+function ActiveMissionRow({ mission }: { mission: Mission }) {
+  const variant  = STATUS_BADGE[mission.status] ?? "default";
+  const dotColor = MISSION_DOT[mission.status]  ?? "bg-content-muted";
+
   return (
-    <p className="py-3 text-center text-xs text-neutral-700">{text}</p>
+    <Link
+      href="/missions"
+      className={cn(
+        "group flex items-center gap-3 rounded-lg px-3 py-2.5",
+        "border border-[var(--border-subtle)] bg-[var(--surface-raised)]",
+        "hover:border-[var(--border-default)] hover:bg-[var(--surface-overlay)]",
+        "transition-colors",
+      )}
+    >
+      <span className={cn("h-2 w-2 shrink-0 rounded-full", dotColor)} />
+      <span className="flex-1 truncate text-sm text-content-primary">
+        {mission.intent}
+      </span>
+      <Badge variant={variant} size="sm">
+        {mission.status.replace(/_/g, " ")}
+      </Badge>
+      <span className="shrink-0 text-xs text-content-muted tabular-nums">
+        {rel(mission.updated_at)}
+      </span>
+    </Link>
+  );
+}
+
+const FEED_ICON = {
+  mission:  TargetIcon,
+  memory:   BrainIcon,
+  fact:     BookOpenIcon,
+  artifact: PackageIcon,
+} as const;
+
+const FEED_BADGE: Record<FeedItem["kind"], BadgeVariant> = {
+  mission:  "default",
+  memory:   "active",
+  fact:     "info",
+  artifact: "default",
+};
+
+function FeedRow({ item }: { item: FeedItem }) {
+  const Icon    = FEED_ICON[item.kind] ?? ActivityIcon;
+  const variant = FEED_BADGE[item.kind];
+
+  return (
+    <Link
+      href={item.href}
+      className={cn(
+        "group relative flex items-center gap-3 rounded-md py-2 pl-6 pr-3",
+        "hover:bg-[var(--surface-raised)] transition-colors",
+      )}
+    >
+      {/* timeline dot */}
+      <span
+        className={cn(
+          "absolute left-0 top-1/2 -translate-y-1/2",
+          "flex h-3 w-3 items-center justify-center",
+          "rounded-full border border-[var(--border-default)] bg-[var(--surface-base)]",
+        )}
+      >
+        <span className="h-1 w-1 rounded-full bg-[var(--border-strong)]" />
+      </span>
+
+      <Icon size={12} className="shrink-0 text-content-muted" />
+
+      <p className="flex-1 truncate text-sm text-content-secondary group-hover:text-content-primary transition-colors">
+        {item.text}
+      </p>
+
+      <div className="flex shrink-0 items-center gap-1.5">
+        <Badge variant={variant} size="sm">{item.kind}</Badge>
+        <span className="text-xs text-content-muted tabular-nums w-8 text-right">
+          {rel(item.at.toISOString())}
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+function SystemFooter({
+  health,
+  scheduler,
+}: {
+  health:    DashboardSummary["health"];
+  scheduler: DashboardSummary["scheduler"];
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-[var(--border-subtle)] pt-4">
+      {health.map((h) => (
+        <HealthDot key={h.name} component={h} />
+      ))}
+      <span className="ml-auto flex items-center gap-1 text-xs text-content-muted">
+        <ZapIcon size={10} />
+        {scheduler.active_triggers} trigger{scheduler.active_triggers !== 1 ? "s" : ""}
+      </span>
+    </div>
+  );
+}
+
+function HealthDot({ component }: { component: Health }) {
+  const ok = component.status === "ready";
+  return (
+    <span className="flex items-center gap-1 text-xs text-content-muted">
+      <span
+        className={cn(
+          "h-1.5 w-1.5 rounded-full",
+          ok ? "bg-status-success" : "bg-status-error",
+        )}
+      />
+      {component.name}
+    </span>
   );
 }
