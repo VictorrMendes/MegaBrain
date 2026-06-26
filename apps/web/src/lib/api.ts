@@ -231,6 +231,27 @@ export interface RuntimeStatus {
   active_missions: Mission[];
 }
 
+export interface Trigger {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  type: string;
+  status: string;
+  cron_expression: string | null;
+  timezone: string;
+  event_type: string | null;
+  rule_expression: string | null;
+  poll_interval_seconds: number | null;
+  mission_intent_template: string;
+  requires_approval: boolean;
+  last_fired_at: string | null;
+  next_fire_at: string | null;
+  fire_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // SSE streaming event types
 export type StreamEvent =
   | { event: "thinking" }
@@ -572,6 +593,14 @@ export const api = {
 
   // ── Runtime ───────────────────────────────────────────────────────────
   getRuntimeStatus: () => get<RuntimeStatus>("/runtime"),
+
+  // ── Scheduler ─────────────────────────────────────────────────────────
+  listTriggers: (wsId: string, status?: string) =>
+    get<Trigger[]>(`/workspaces/${wsId}/triggers${status ? `?status=${status}` : ""}`),
+  pauseTrigger: (wsId: string, triggerId: string) =>
+    post<Trigger>(`/workspaces/${wsId}/triggers/${triggerId}/pause`),
+  resumeTrigger: (wsId: string, triggerId: string) =>
+    post<Trigger>(`/workspaces/${wsId}/triggers/${triggerId}/resume`),
 
   // ── Obsidian ──────────────────────────────────────────────────────────
   syncObsidian: (wsId: string, notes: ObsidianNoteInput[]) =>
