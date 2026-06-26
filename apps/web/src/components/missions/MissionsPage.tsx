@@ -1,28 +1,52 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, type Mission, type MissionDetail } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import {
+  api,
+  type Mission,
+  type MissionDetail,
+  type MissionStep,
+} from "@/lib/api";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { cn } from "@/lib/cn";
-import { TargetIcon, LoaderIcon, ChevronRightIcon, PlayIcon, CheckIcon, XIcon, RefreshCwIcon } from "lucide-react";
+import { Badge, type BadgeVariant, Button, Spinner } from "@/components/ui";
+import {
+  CheckCircle2Icon,
+  ChevronRightIcon,
+  CircleIcon,
+  MinusCircleIcon,
+  PackageIcon,
+  PlayIcon,
+  RefreshCwIcon,
+  TargetIcon,
+  XCircleIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  XIcon,
+  CheckIcon,
+} from "lucide-react";
 
-const STATUS_COLOR: Record<string, string> = {
-  pending:          "text-neutral-400 bg-neutral-800",
-  planning:         "text-blue-400 bg-blue-950",
-  waiting_approval: "text-yellow-400 bg-yellow-950",
-  ready:            "text-emerald-400 bg-emerald-950",
-  running:          "text-blue-300 bg-blue-950 animate-pulse",
-  paused:           "text-orange-400 bg-orange-950",
-  retrying:         "text-orange-300 bg-orange-950",
-  succeeded:        "text-emerald-400 bg-emerald-950",
-  failed:           "text-red-400 bg-red-950",
-  cancelled:        "text-neutral-500 bg-neutral-900",
+// ─────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────
+
+const STATUS_BADGE: Record<string, BadgeVariant> = {
+  pending:          "default",
+  planning:         "info",
+  waiting_approval: "warning",
+  ready:            "info",
+  running:          "active",
+  paused:           "warning",
+  retrying:         "warning",
+  succeeded:        "success",
+  failed:           "error",
+  cancelled:        "muted",
 };
 
 const STATUS_LABEL: Record<string, string> = {
   pending:          "pendente",
   planning:         "planejando",
-  waiting_approval: "aguardando aprovação",
+  waiting_approval: "aprovação",
   ready:            "pronto",
   running:          "executando",
   paused:           "pausado",
@@ -32,19 +56,50 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled:        "cancelado",
 };
 
+const STEP_BADGE: Record<string, BadgeVariant> = {
+  pending:   "default",
+  running:   "active",
+  succeeded: "success",
+  failed:    "error",
+  cancelled: "muted",
+  skipped:   "muted",
+};
+
+const ACTIVE_STATUSES = new Set(["running", "planning"]);
+
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
+
 function formatDate(s: string) {
   return new Date(s).toLocaleString("pt-BR", {
-    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+    day: "2-digit", month: "2-digit",
+    hour: "2-digit", minute: "2-digit",
   });
 }
 
+function stepDuration(step: MissionStep): string {
+  if (!step.started_at) return "";
+  const end = step.finished_at ? new Date(step.finished_at) : new Date();
+  const ms  = end.getTime() - new Date(step.started_at).getTime();
+  if (ms < 1000)  return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Main component
+// ─────────────────────────────────────────────────────────────
+
 export function MissionsPage() {
   const { current: workspace, loading: wsLoading } = useWorkspace();
-  const [missions, setMissions] = useState<Mission[]>([]);
-  const [selected, setSelected] = useState<MissionDetail | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [missions,       setMissions]       = useState<Mission[]>([]);
+  const [selected,       setSelected]       = useState<MissionDetail | null>(null);
+  const [loading,        setLoading]        = useState(false);
+  const [actionLoading,  setActionLoading]  = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // ─── load missions list ───
   useEffect(() => {
     if (!workspace) return;
     setLoading(true);
@@ -53,17 +108,40 @@ export function MissionsPage() {
       .finally(() => setLoading(false));
   }, [workspace?.id]);
 
+  // ─── polling when mission is active ───
+  useEffect(() => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (!selected || !workspace) return;
+    if (!ACTIVE_STATUSES.has(selected.status)) return;
+
+    pollRef.current = setInterval(async () => {
+      const detail = await api.getMission(workspace.id, selected.id);
+      setSelected(detail);
+      setMissions((prev) =>
+        prev.map((m) => (m.id === detail.id ? detail : m)),
+      );
+      if (!ACTIVE_STATUSES.has(detail.status) && pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    }, 3000);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [selected?.id, selected?.status, workspace?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function selectMission(id: string) {
     if (!workspace) return;
     const detail = await api.getMission(workspace.id, id);
     setSelected(detail);
   }
 
-  async function action(fn: () => Promise<Mission>) {
+  async function doAction(fn: () => Promise<Mission>) {
     setActionLoading(true);
     try {
       const updated = await fn();
-      setMissions((prev) => prev.map((m) => m.id === updated.id ? updated : m));
+      setMissions((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
       if (selected?.id === updated.id) {
         const detail = await api.getMission(workspace!.id, updated.id);
         setSelected(detail);
@@ -76,197 +154,359 @@ export function MissionsPage() {
   if (wsLoading || loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoaderIcon size={20} className="animate-spin text-neutral-500" />
+        <Spinner size="md" />
       </div>
     );
   }
 
   return (
-    <div className="flex h-full">
-      {/* List */}
-      <div className="flex w-80 shrink-0 flex-col border-r border-neutral-800">
-        <header className="flex items-center gap-2 border-b border-neutral-800 px-4 py-3">
-          <TargetIcon size={15} className="text-neutral-400" />
-          <span className="text-sm font-medium text-neutral-300">Missões</span>
-          <span className="ml-auto text-xs text-neutral-600">{missions.length}</span>
+    <div className="flex h-full overflow-hidden">
+
+      {/* ── Mission list ── */}
+      <aside
+        className={cn(
+          "flex w-72 shrink-0 flex-col",
+          "border-r border-[var(--border-subtle)] bg-[var(--surface-raised)]",
+        )}
+      >
+        <header className="flex items-center gap-2 border-b border-[var(--border-subtle)] px-4 py-3">
+          <TargetIcon size={14} className="text-content-muted" />
+          <span className="text-sm font-medium text-content-primary">Missões</span>
+          <span className="ml-auto text-[11px] text-content-muted">{missions.length}</span>
         </header>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto py-1">
           {missions.length === 0 ? (
-            <p className="px-4 py-6 text-center text-xs text-neutral-600">
+            <p className="px-4 py-8 text-center text-xs text-content-muted">
               Nenhuma missão ainda.
             </p>
           ) : (
-            missions.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => selectMission(m.id)}
-                className={cn(
-                  "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors border-b border-neutral-800/50",
-                  selected?.id === m.id
-                    ? "bg-neutral-800"
-                    : "hover:bg-neutral-800/50"
-                )}
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-neutral-200 truncate">{m.intent}</p>
-                  <p className="mt-0.5 text-[10px] text-neutral-600">{formatDate(m.created_at)}</p>
-                </div>
-                <span className={cn("mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium", STATUS_COLOR[m.status])}>
-                  {STATUS_LABEL[m.status] ?? m.status}
-                </span>
-                <ChevronRightIcon size={13} className="mt-0.5 shrink-0 text-neutral-600" />
-              </button>
-            ))
+            missions.map((m) => {
+              const isActive = selected?.id === m.id;
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => selectMission(m.id)}
+                  className={cn(
+                    "flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors",
+                    "border-b border-[var(--border-subtle)]",
+                    isActive
+                      ? "bg-[var(--surface-overlay)]"
+                      : "hover:bg-[var(--surface-subtle)]",
+                  )}
+                >
+                  <StatusDot status={m.status} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-content-primary truncate">{m.intent}</p>
+                    <p className="mt-0.5 text-[10px] text-content-muted">{formatDate(m.created_at)}</p>
+                  </div>
+                  <ChevronRightIcon
+                    size={12}
+                    className={cn("mt-0.5 shrink-0", isActive ? "text-accent" : "text-content-muted")}
+                  />
+                </button>
+              );
+            })
           )}
         </div>
-      </div>
+      </aside>
 
-      {/* Detail */}
-      <div className="flex-1 overflow-y-auto">
+      {/* ── Detail panel ── */}
+      <main className="flex-1 overflow-y-auto bg-[var(--surface-base)]">
         {!selected ? (
           <div className="flex h-full items-center justify-center">
-            <p className="text-xs text-neutral-600">Selecione uma missão</p>
+            <p className="text-sm text-content-muted">Selecione uma missão</p>
           </div>
         ) : (
-          <div className="p-6 max-w-3xl">
-            {/* Header */}
-            <div className="mb-4 flex items-start gap-3">
+          <div className="p-6 max-w-3xl mx-auto animate-fade-in">
+
+            {/* ── Header ── */}
+            <div className="mb-5 flex items-start gap-3">
               <div className="flex-1">
-                <h1 className="text-sm font-semibold text-neutral-100">{selected.intent}</h1>
-                <p className="mt-1 text-xs text-neutral-500">
-                  Criado em {formatDate(selected.created_at)}
-                  {selected.completed_at && ` · Concluído em ${formatDate(selected.completed_at)}`}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-md font-semibold text-content-primary">{selected.intent}</h1>
+                  <Badge variant={STATUS_BADGE[selected.status] ?? "default"} size="md">
+                    {STATUS_LABEL[selected.status] ?? selected.status}
+                  </Badge>
+                  {ACTIVE_STATUSES.has(selected.status) && (
+                    <span className="flex items-center gap-1 text-xs text-accent">
+                      <Spinner size="sm" className="text-accent" />
+                      ao vivo
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1.5 text-xs text-content-muted">
+                  Criado {formatDate(selected.created_at)}
+                  {selected.completed_at && ` · Concluído ${formatDate(selected.completed_at)}`}
+                  {" · "}{selected.trigger}
                 </p>
               </div>
-              <span className={cn("shrink-0 rounded px-2 py-1 text-xs font-medium", STATUS_COLOR[selected.status])}>
-                {STATUS_LABEL[selected.status] ?? selected.status}
-              </span>
             </div>
 
-            {/* Actions */}
-            {!actionLoading && (
-              <div className="mb-5 flex gap-2 flex-wrap">
+            {/* ── Actions ── */}
+            {!actionLoading ? (
+              <div className="mb-6 flex gap-2 flex-wrap">
                 {selected.status === "pending" && (
-                  <ActionBtn icon={<PlayIcon size={12} />} label="Planejar"
-                    onClick={() => action(() => api.planMission(workspace!.id, selected.id))} />
+                  <Button
+                    variant="secondary" size="sm"
+                    onClick={() => doAction(() => api.planMission(workspace!.id, selected.id))}
+                  >
+                    <PlayIcon size={12} /> Planejar
+                  </Button>
                 )}
                 {selected.status === "waiting_approval" && (
                   <>
-                    <ActionBtn icon={<CheckIcon size={12} />} label="Aprovar" variant="green"
-                      onClick={() => action(() => api.approveMission(workspace!.id, selected.id))} />
-                    <ActionBtn icon={<XIcon size={12} />} label="Rejeitar" variant="red"
-                      onClick={() => action(() => api.rejectMission(workspace!.id, selected.id))} />
+                    <Button
+                      variant="secondary" size="sm"
+                      className="text-status-success border-emerald-900/40 hover:bg-emerald-950/40"
+                      onClick={() => doAction(() => api.approveMission(workspace!.id, selected.id))}
+                    >
+                      <CheckIcon size={12} /> Aprovar
+                    </Button>
+                    <Button
+                      variant="danger" size="sm"
+                      onClick={() => doAction(() => api.rejectMission(workspace!.id, selected.id))}
+                    >
+                      <XIcon size={12} /> Rejeitar
+                    </Button>
                   </>
                 )}
                 {selected.status === "ready" && (
-                  <ActionBtn icon={<PlayIcon size={12} />} label="Executar" variant="green"
-                    onClick={() => action(() => api.runMission(workspace!.id, selected.id))} />
+                  <Button
+                    variant="primary" size="sm"
+                    onClick={() => doAction(() => api.runMission(workspace!.id, selected.id))}
+                  >
+                    <PlayIcon size={12} /> Executar
+                  </Button>
                 )}
                 {["pending","planning","waiting_approval","ready","running","paused"].includes(selected.status) && (
-                  <ActionBtn icon={<XIcon size={12} />} label="Cancelar" variant="red"
-                    onClick={() => action(() => api.cancelMission(workspace!.id, selected.id))} />
+                  <Button
+                    variant="danger" size="sm"
+                    onClick={() => doAction(() => api.cancelMission(workspace!.id, selected.id))}
+                  >
+                    <XIcon size={12} /> Cancelar
+                  </Button>
                 )}
                 {selected.status === "failed" && (
-                  <ActionBtn icon={<RefreshCwIcon size={12} />} label="Replanejar"
-                    onClick={() => action(() => api.planMission(workspace!.id, selected.id))} />
+                  <Button
+                    variant="secondary" size="sm"
+                    onClick={() => doAction(() => api.planMission(workspace!.id, selected.id))}
+                  >
+                    <RefreshCwIcon size={12} /> Replanejar
+                  </Button>
                 )}
               </div>
-            )}
-            {actionLoading && (
-              <div className="mb-5">
-                <LoaderIcon size={16} className="animate-spin text-neutral-500" />
+            ) : (
+              <div className="mb-6">
+                <Spinner size="sm" />
               </div>
             )}
 
-            {/* Steps */}
+            {/* ── Steps pipeline ── */}
             {selected.steps.length > 0 && (
-              <Section title="Passos de execução">
-                <div className="space-y-2">
-                  {selected.steps.map((step) => (
-                    <div key={step.id} className="flex items-start gap-3 rounded-lg border border-neutral-800 p-3">
-                      <span className="mt-0.5 w-5 shrink-0 text-center text-xs text-neutral-600">{step.order}</span>
+              <DetailSection title="Execução">
+                <div className="mt-1">
+                  {selected.steps.map((step, i) => (
+                    <StepRow
+                      key={step.id}
+                      step={step}
+                      isLast={i === selected.steps.length - 1}
+                    />
+                  ))}
+                </div>
+              </DetailSection>
+            )}
+
+            {/* ── Artifacts ── */}
+            {selected.artifacts.length > 0 && (
+              <DetailSection title="Artifacts">
+                <div className="mt-2 space-y-1.5">
+                  {selected.artifacts.map((a) => (
+                    <div
+                      key={a.id}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-2.5",
+                        "border border-[var(--border-subtle)] bg-[var(--surface-raised)]",
+                      )}
+                    >
+                      <PackageIcon size={13} className="shrink-0 text-content-muted" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs text-neutral-300 font-medium">{step.tool}</p>
-                        <p className="text-[10px] text-neutral-600">{step.type}</p>
+                        <p className="text-xs text-content-primary truncate">{a.name}</p>
+                        <p className="text-[10px] text-content-muted">{a.type} · {a.mime}</p>
                       </div>
-                      <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px]", STATUS_COLOR[step.status] ?? "text-neutral-500 bg-neutral-800")}>
-                        {step.status}
+                      <span className="text-[10px] text-content-muted shrink-0">
+                        {formatDate(a.created_at)}
                       </span>
                     </div>
                   ))}
                 </div>
-              </Section>
+              </DetailSection>
             )}
 
-            {/* Artifacts */}
-            {selected.artifacts.length > 0 && (
-              <Section title="Artifacts produzidos">
-                <div className="space-y-2">
-                  {selected.artifacts.map((a) => (
-                    <div key={a.id} className="flex items-center gap-3 rounded-lg border border-neutral-800 p-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-neutral-200 truncate">{a.name}</p>
-                        <p className="text-[10px] text-neutral-600">{a.type} · {a.mime}</p>
-                      </div>
-                      <p className="text-[10px] text-neutral-600 shrink-0">{formatDate(a.created_at)}</p>
-                    </div>
-                  ))}
-                </div>
-              </Section>
-            )}
-
-            {/* Logs */}
+            {/* ── Logs ── */}
             {selected.logs.length > 0 && (
-              <Section title="Logs">
-                <div className="space-y-1 rounded-lg border border-neutral-800 p-3 font-mono">
+              <DetailSection title="Logs">
+                <div
+                  className={cn(
+                    "mt-2 rounded-lg border border-[var(--border-subtle)]",
+                    "bg-[var(--surface-inset)] p-4 font-mono max-h-72 overflow-y-auto",
+                  )}
+                >
                   {selected.logs.map((log) => (
-                    <div key={log.id} className="flex gap-2 text-[11px]">
-                      <span className={cn("shrink-0", log.level === "error" ? "text-red-400" : "text-neutral-600")}>
+                    <div key={log.id} className="flex gap-3 text-[11px] leading-relaxed">
+                      <span
+                        className={cn(
+                          "shrink-0 w-10",
+                          log.level === "error"   && "text-status-error",
+                          log.level === "warning" && "text-status-warning",
+                          log.level === "info"    && "text-content-muted",
+                          log.level === "debug"   && "text-content-placeholder",
+                        )}
+                      >
                         [{log.level}]
                       </span>
-                      <span className="text-neutral-400">{log.message}</span>
+                      <span className="text-content-secondary">{log.message}</span>
                     </div>
                   ))}
                 </div>
-              </Section>
+              </DetailSection>
             )}
+
           </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────────────────────
+
+function StatusDot({ status }: { status: string }) {
+  const color: Record<string, string> = {
+    pending:          "bg-content-muted",
+    planning:         "bg-status-info",
+    waiting_approval: "bg-status-warning",
+    ready:            "bg-status-success",
+    running:          "bg-accent animate-pulse-dot",
+    paused:           "bg-status-warning",
+    retrying:         "bg-status-warning",
+    succeeded:        "bg-status-success",
+    failed:           "bg-status-error",
+    cancelled:        "bg-content-placeholder",
+  };
+  return (
+    <span
+      className={cn(
+        "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+        color[status] ?? "bg-content-muted",
+      )}
+    />
+  );
+}
+
+function StepRow({ step, isLast }: { step: MissionStep; isLast: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasDetails = step.output !== null || Object.keys(step.input ?? {}).length > 0;
+  const duration  = stepDuration(step);
+
+  return (
+    <div className="relative flex gap-3 pb-0">
+      {/* Vertical connector line */}
+      {!isLast && (
+        <div className="absolute left-[8px] top-5 bottom-0 w-px bg-[var(--border-subtle)]" />
+      )}
+
+      {/* Status icon */}
+      <div className="mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center">
+        <StepStatusIcon status={step.status} />
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0 pb-5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-content-primary">{step.tool}</span>
+          <Badge variant={STEP_BADGE[step.status] ?? "default"} size="sm">
+            {step.status}
+          </Badge>
+          <span className="text-[11px] text-content-muted">{step.type}</span>
+          {duration && (
+            <span className="ml-auto text-[11px] text-content-muted tabular-nums">
+              {duration}
+            </span>
+          )}
+        </div>
+
+        {/* Expand toggle */}
+        {hasDetails && (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="mt-1.5 flex items-center gap-1 text-[11px] text-content-muted hover:text-content-secondary transition-colors"
+          >
+            {expanded ? <ChevronUpIcon size={11} /> : <ChevronDownIcon size={11} />}
+            {expanded ? "ocultar" : "detalhes"}
+          </button>
+        )}
+
+        {/* Expanded: input */}
+        {expanded && step.input && Object.keys(step.input).length > 0 && (
+          <JsonBlock label="input" data={step.input} />
+        )}
+
+        {/* Expanded: output */}
+        {expanded && step.output && (
+          <JsonBlock label="output" data={step.output} />
         )}
       </div>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function StepStatusIcon({ status }: { status: string }) {
+  if (status === "succeeded")
+    return <CheckCircle2Icon size={16} className="text-status-success" />;
+  if (status === "failed")
+    return <XCircleIcon size={16} className="text-status-error" />;
+  if (status === "running")
+    return <Spinner size="sm" className="text-accent" />;
+  if (status === "cancelled" || status === "skipped")
+    return <MinusCircleIcon size={16} className="text-content-muted" />;
+  return <CircleIcon size={16} className="text-content-muted" />;
+}
+
+function JsonBlock({ label, data }: { label: string; data: unknown }) {
   return (
-    <div className="mb-6">
-      <h2 className="mb-2 text-xs font-semibold uppercase tracking-widest text-neutral-500">{title}</h2>
-      {children}
+    <div className="mt-2">
+      <p className="text-[10px] font-medium uppercase tracking-widest text-content-muted mb-1">
+        {label}
+      </p>
+      <pre
+        className={cn(
+          "rounded-lg border border-[var(--border-subtle)]",
+          "bg-[var(--surface-inset)] p-3",
+          "text-[11px] text-content-secondary font-mono",
+          "overflow-x-auto max-h-48",
+        )}
+      >
+        {JSON.stringify(data, null, 2)}
+      </pre>
     </div>
   );
 }
 
-function ActionBtn({
-  icon, label, onClick, variant = "default",
+function DetailSection({
+  title, children,
 }: {
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-  variant?: "default" | "green" | "red";
+  title: string;
+  children: React.ReactNode;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-        variant === "green" && "bg-emerald-900 text-emerald-300 hover:bg-emerald-800",
-        variant === "red" && "bg-red-950 text-red-400 hover:bg-red-900",
-        variant === "default" && "bg-neutral-800 text-neutral-300 hover:bg-neutral-700",
-      )}
-    >
-      {icon}
-      {label}
-    </button>
+    <div className="mb-8">
+      <h2 className="text-[11px] font-semibold uppercase tracking-widest text-content-muted">
+        {title}
+      </h2>
+      {children}
+    </div>
   );
 }

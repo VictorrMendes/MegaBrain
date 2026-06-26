@@ -1,194 +1,409 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { api, type InboxItem, type Mission, type Memory } from "@/lib/api";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { cn } from "@/lib/cn";
+import { Badge, type BadgeVariant, Spinner } from "@/components/ui";
 import {
-  ActivityIcon, LoaderIcon, InboxIcon, TargetIcon, BrainIcon,
+  ActivityIcon,
+  BrainIcon,
+  InboxIcon,
+  RefreshCwIcon,
+  TargetIcon,
 } from "lucide-react";
+
+// ─────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────
 
 type EventKind = "inbox" | "mission" | "memory";
 
 interface TimelineEvent {
-  id: string;
-  kind: EventKind;
-  title: string;
-  subtitle: string;
+  id:     string;
+  kind:   EventKind;
+  title:  string;
+  sub:    string;
   badge?: string;
-  badgeColor?: string;
-  ts: string;
+  badgeVariant?: BadgeVariant;
+  href:   string;
+  ts:     Date;
 }
 
-function formatDate(s: string) {
-  return new Date(s).toLocaleString("pt-BR", {
-    day: "2-digit", month: "2-digit", year: "2-digit",
-    hour: "2-digit", minute: "2-digit",
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
+
+function rel(date: Date): string {
+  const diff = Date.now() - date.getTime();
+  const m = Math.floor(diff / 60_000);
+  if (m < 1)  return "agora";
+  if (m < 60) return `${m}m atrás`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `há ${h}h`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? "ontem" : `há ${d}d`;
+}
+
+function absoluteDate(date: Date): string {
+  return date.toLocaleString("pt-BR", {
+    day:    "2-digit",
+    month:  "2-digit",
+    hour:   "2-digit",
+    minute: "2-digit",
   });
 }
 
-const KIND_ICON: Record<EventKind, React.ReactNode> = {
-  inbox:   <InboxIcon size={12} className="text-blue-400" />,
-  mission: <TargetIcon size={12} className="text-violet-400" />,
-  memory:  <BrainIcon size={12} className="text-emerald-400" />,
+const STATUS_BADGE: Record<string, BadgeVariant> = {
+  pending:          "default",
+  planning:         "info",
+  waiting_approval: "warning",
+  ready:            "info",
+  running:          "active",
+  succeeded:        "success",
+  failed:           "error",
+  cancelled:        "muted",
+  processed:        "success",
+  deferred:         "warning",
 };
 
-const KIND_COLOR: Record<EventKind, string> = {
-  inbox:   "border-blue-800 bg-blue-950/30",
-  mission: "border-violet-800 bg-violet-950/30",
-  memory:  "border-emerald-800 bg-emerald-950/30",
+const KIND_ICON: Record<EventKind, React.ReactNode> = {
+  inbox:   <InboxIcon   size={13} />,
+  mission: <TargetIcon  size={13} />,
+  memory:  <BrainIcon   size={13} />,
 };
+
+const KIND_ACCENT: Record<EventKind, string> = {
+  inbox:   "text-status-info",
+  mission: "text-status-active",
+  memory:  "text-status-success",
+};
+
+const KIND_DOT: Record<EventKind, string> = {
+  inbox:   "bg-status-info",
+  mission: "bg-accent",
+  memory:  "bg-status-success",
+};
+
+const KIND_LABEL: Record<EventKind, string> = {
+  inbox:   "Inbox",
+  mission: "Missão",
+  memory:  "Memória",
+};
+
+// ─────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────
 
 export function TimelinePage() {
   const { current: workspace, loading: wsLoading } = useWorkspace();
-  const [events, setEvents] = useState<TimelineEvent[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState<EventKind | "all">("all");
+  const [events,    setEvents]    = useState<TimelineEvent[]>([]);
+  const [loading,   setLoading]   = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [filter,    setFilter]    = useState<EventKind | "all">("all");
+
+  const load = useCallback(async () => {
+    if (!workspace) return;
+    setLoading(true);
+    try {
+      const [inbox, missions, memories] = await Promise.allSettled([
+        api.listInbox(workspace.id),
+        api.listMissions(workspace.id),
+        api.listMemories(workspace.id, 100),
+      ]);
+
+      const evts: TimelineEvent[] = [];
+
+      if (inbox.status === "fulfilled") {
+        for (const item of inbox.value as InboxItem[]) {
+          evts.push({
+            id:          `inbox-${item.id}`,
+            kind:        "inbox",
+            title:       item.title ?? item.raw_content.slice(0, 70) + (item.raw_content.length > 70 ? "…" : ""),
+            sub:         `${item.source} · ${item.type}`,
+            badge:       item.status,
+            badgeVariant: STATUS_BADGE[item.status] ?? "default",
+            href:        "/inbox",
+            ts:          new Date(item.created_at),
+          });
+        }
+      }
+
+      if (missions.status === "fulfilled") {
+        for (const m of missions.value as Mission[]) {
+          evts.push({
+            id:          `mission-${m.id}`,
+            kind:        "mission",
+            title:       m.intent,
+            sub:         m.trigger,
+            badge:       m.status,
+            badgeVariant: STATUS_BADGE[m.status] ?? "default",
+            href:        "/missions",
+            ts:          new Date(m.updated_at),
+          });
+        }
+      }
+
+      if (memories.status === "fulfilled") {
+        for (const mem of memories.value as Memory[]) {
+          evts.push({
+            id:    `memory-${mem.id}`,
+            kind:  "memory",
+            title: mem.content.slice(0, 80) + (mem.content.length > 80 ? "…" : ""),
+            sub:   `${mem.type} · ${(mem.importance * 100).toFixed(0)}% importância`,
+            href:  "/memory",
+            ts:    new Date(mem.created_at),
+          });
+        }
+      }
+
+      evts.sort((a, b) => b.ts.getTime() - a.ts.getTime());
+      setEvents(evts);
+      setLastRefresh(new Date());
+    } finally {
+      setLoading(false);
+    }
+  }, [workspace?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!workspace) return;
-    async function load() {
-      setLoading(true);
-      try {
-        const ws = workspace;
-
-        const [inbox, missions, memories] = await Promise.allSettled([
-          api.listInbox(ws.id),
-          api.listMissions(ws.id),
-          api.listMemories(ws.id, 100),
-        ]);
-
-        const evts: TimelineEvent[] = [];
-
-        if (inbox.status === "fulfilled") {
-          for (const item of inbox.value as InboxItem[]) {
-            evts.push({
-              id: `inbox-${item.id}`,
-              kind: "inbox",
-              title: item.title ?? item.raw_content.slice(0, 60) + (item.raw_content.length > 60 ? "…" : ""),
-              subtitle: `${item.source} · ${item.type}`,
-              badge: item.status,
-              ts: item.created_at,
-            });
-          }
-        }
-
-        if (missions.status === "fulfilled") {
-          for (const m of missions.value as Mission[]) {
-            evts.push({
-              id: `mission-${m.id}`,
-              kind: "mission",
-              title: m.intent,
-              subtitle: m.trigger,
-              badge: m.status,
-              ts: m.updated_at,
-            });
-          }
-        }
-
-        if (memories.status === "fulfilled") {
-          for (const mem of memories.value as Memory[]) {
-            evts.push({
-              id: `memory-${mem.id}`,
-              kind: "memory",
-              title: mem.content.slice(0, 80) + (mem.content.length > 80 ? "…" : ""),
-              subtitle: `${mem.type} · importância ${(mem.importance * 100).toFixed(0)}%`,
-              ts: mem.created_at,
-            });
-          }
-        }
-
-        evts.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
-        setEvents(evts);
-      } finally {
-        setLoading(false);
-      }
-    }
     load();
-  }, []);
+  }, [workspace?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── derived ───
+  const counts = events.reduce<Record<EventKind | "all", number>>(
+    (acc, e) => { acc[e.kind]++; acc.all++; return acc; },
+    { all: 0, inbox: 0, mission: 0, memory: 0 },
+  );
 
   const visible = filter === "all" ? events : events.filter((e) => e.kind === filter);
 
-  const counts = events.reduce<Record<EventKind | "all", number>>(
-    (acc, e) => { acc[e.kind]++; acc.all++; return acc; },
-    { all: 0, inbox: 0, mission: 0, memory: 0 }
-  );
+  // ─── group by relative date ───
+  const grouped = groupByDay(visible);
 
-  if (wsLoading || loading) {
+  if (wsLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoaderIcon size={20} className="animate-spin text-neutral-500" />
+        <Spinner size="md" />
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="mx-auto max-w-3xl">
-        {/* Header */}
-        <div className="mb-4 flex items-center gap-2">
-          <ActivityIcon size={15} className="text-neutral-400" />
-          <h1 className="text-sm font-semibold text-neutral-300">Timeline</h1>
-          <span className="ml-auto text-xs text-neutral-600">{visible.length} eventos</span>
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-2xl px-6 py-8">
+
+        {/* ── Header ── */}
+        <div className="mb-6 flex items-center gap-2">
+          <ActivityIcon size={14} className="text-content-muted" />
+          <h1 className="text-md font-semibold text-content-primary">Timeline</h1>
+
+          {lastRefresh && (
+            <span className="ml-2 text-xs text-content-muted">
+              atualizado {rel(lastRefresh)}
+            </span>
+          )}
+
+          <button
+            onClick={() => load()}
+            disabled={loading}
+            className={cn(
+              "ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-xs",
+              "text-content-muted hover:text-content-secondary hover:bg-surface-subtle",
+              "transition-colors disabled:opacity-30",
+            )}
+          >
+            <RefreshCwIcon size={12} className={loading ? "animate-spin" : ""} />
+            Atualizar
+          </button>
         </div>
 
-        {/* Filter */}
-        <div className="mb-6 flex gap-1 rounded-lg border border-neutral-800 bg-neutral-900 p-1 w-fit flex-wrap">
-          {(["all", "inbox", "mission", "memory"] as const).map((k) => (
-            <button
+        {/* ── Filter chips ── */}
+        <div className="mb-8 flex flex-wrap gap-1.5">
+          <FilterChip
+            active={filter === "all"}
+            onClick={() => setFilter("all")}
+            count={counts.all}
+          >
+            Todos
+          </FilterChip>
+          {(["inbox", "mission", "memory"] as EventKind[]).map((k) => (
+            <FilterChip
               key={k}
+              active={filter === k}
               onClick={() => setFilter(k)}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors",
-                filter === k ? "bg-neutral-700 text-neutral-200" : "text-neutral-500 hover:text-neutral-400"
-              )}
+              count={counts[k]}
+              icon={KIND_ICON[k]}
+              iconClass={KIND_ACCENT[k]}
             >
-              {k !== "all" && KIND_ICON[k as EventKind]}
-              {k === "all" ? "Todos" : k} ({counts[k]})
-            </button>
+              {KIND_LABEL[k]}
+            </FilterChip>
           ))}
         </div>
 
-        {/* Events */}
-        {visible.length === 0 ? (
-          <p className="text-center text-xs text-neutral-600 py-10">Nenhum evento encontrado.</p>
+        {/* ── Timeline ── */}
+        {loading && events.length === 0 ? (
+          <div className="flex justify-center py-16">
+            <Spinner size="md" />
+          </div>
+        ) : visible.length === 0 ? (
+          <p className="text-center text-sm text-content-muted py-16">
+            Nenhum evento encontrado.
+          </p>
         ) : (
-          <div className="relative">
-            <div className="absolute left-4 top-0 bottom-0 w-px bg-neutral-800" />
-            <div className="space-y-2 ml-10">
-              {visible.map((evt) => (
-                <div
-                  key={evt.id}
-                  className={cn(
-                    "relative rounded-lg border p-3",
-                    KIND_COLOR[evt.kind]
-                  )}
-                >
-                  {/* dot */}
-                  <div className={cn(
-                    "absolute -left-[26px] top-3.5 flex h-4 w-4 items-center justify-center rounded-full border border-neutral-800 bg-neutral-950"
-                  )}>
-                    {KIND_ICON[evt.kind]}
-                  </div>
-
-                  <div className="flex items-start gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-neutral-200 truncate">{evt.title}</p>
-                      <p className="mt-0.5 text-[10px] text-neutral-600">{evt.subtitle}</p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      {evt.badge && (
-                        <p className="text-[9px] text-neutral-500 mb-0.5">{evt.badge}</p>
-                      )}
-                      <p className="text-[10px] text-neutral-600">{formatDate(evt.ts)}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="space-y-8">
+            {grouped.map(({ label, items }) => (
+              <DayGroup key={label} label={label} items={items} />
+            ))}
           </div>
         )}
+
       </div>
     </div>
   );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────────────────────
+
+function FilterChip({
+  active, onClick, count, icon, iconClass, children,
+}: {
+  active:     boolean;
+  onClick:    () => void;
+  count:      number;
+  icon?:      React.ReactNode;
+  iconClass?: string;
+  children:   React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
+        "border transition-colors",
+        active
+          ? "bg-accent-dim border-accent-subtle text-accent"
+          : "border-[var(--border-subtle)] text-content-secondary hover:border-[var(--border-default)] hover:text-content-primary",
+      )}
+    >
+      {icon && (
+        <span className={cn("opacity-80", active ? "text-accent" : iconClass)}>
+          {icon}
+        </span>
+      )}
+      {children}
+      <span
+        className={cn(
+          "rounded px-1 text-[10px]",
+          active ? "bg-accent/20 text-accent" : "text-content-muted",
+        )}
+      >
+        {count}
+      </span>
+    </button>
+  );
+}
+
+function DayGroup({ label, items }: { label: string; items: TimelineEvent[] }) {
+  return (
+    <div>
+      {/* Day label */}
+      <div className="mb-3 flex items-center gap-3">
+        <span className="text-[11px] font-semibold uppercase tracking-widest text-content-muted">
+          {label}
+        </span>
+        <div className="flex-1 h-px bg-[var(--border-subtle)]" />
+      </div>
+
+      {/* Events */}
+      <div className="relative space-y-1">
+        {/* Timeline line */}
+        <div className="absolute left-[7px] top-3 bottom-3 w-px bg-[var(--border-subtle)]" />
+
+        {items.map((evt) => (
+          <EventRow key={evt.id} evt={evt} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EventRow({ evt }: { evt: TimelineEvent }) {
+  return (
+    <Link
+      href={evt.href}
+      className={cn(
+        "group relative flex items-start gap-3 rounded-lg py-2.5 pl-7 pr-3",
+        "hover:bg-[var(--surface-raised)] transition-colors",
+      )}
+    >
+      {/* Timeline dot */}
+      <span
+        className={cn(
+          "absolute left-0 top-4 flex h-3.5 w-3.5 items-center justify-center",
+          "rounded-full border border-[var(--border-default)] bg-[var(--surface-base)]",
+        )}
+      >
+        <span className={cn("h-1.5 w-1.5 rounded-full", KIND_DOT[evt.kind])} />
+      </span>
+
+      {/* Icon */}
+      <span className={cn("mt-0.5 shrink-0", KIND_ACCENT[evt.kind])}>
+        {KIND_ICON[evt.kind]}
+      </span>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-content-primary truncate group-hover:text-content-primary">
+          {evt.title}
+        </p>
+        <p className="mt-0.5 text-[11px] text-content-muted">{evt.sub}</p>
+      </div>
+
+      {/* Right side */}
+      <div className="shrink-0 flex flex-col items-end gap-1">
+        {evt.badge && evt.badgeVariant && (
+          <Badge variant={evt.badgeVariant} size="sm">{evt.badge}</Badge>
+        )}
+        <span
+          className="text-[11px] text-content-muted tabular-nums"
+          title={absoluteDate(evt.ts)}
+        >
+          {rel(evt.ts)}
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Grouping
+// ─────────────────────────────────────────────────────────────
+
+function dayLabel(date: Date): string {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const fmt = (d: Date) =>
+    d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+
+  if (fmt(date) === fmt(today))     return "Hoje";
+  if (fmt(date) === fmt(yesterday)) return "Ontem";
+  return date.toLocaleDateString("pt-BR", {
+    weekday: "long", day: "numeric", month: "long",
+  });
+}
+
+function groupByDay(events: TimelineEvent[]): { label: string; items: TimelineEvent[] }[] {
+  const map = new Map<string, TimelineEvent[]>();
+  for (const evt of events) {
+    const label = dayLabel(evt.ts);
+    const group = map.get(label) ?? [];
+    group.push(evt);
+    map.set(label, group);
+  }
+  return Array.from(map.entries()).map(([label, items]) => ({ label, items }));
 }
