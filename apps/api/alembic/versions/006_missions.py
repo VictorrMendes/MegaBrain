@@ -17,27 +17,39 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Enums
+    # Enums — guarded against duplicate_object from partial prior runs
     op.execute("""
-        CREATE TYPE mission_status AS ENUM (
-            'pending', 'planning', 'waiting_approval', 'ready',
-            'running', 'paused', 'retrying', 'succeeded', 'failed', 'cancelled'
-        )
+        DO $$ BEGIN
+            CREATE TYPE mission_status AS ENUM (
+                'pending', 'planning', 'waiting_approval', 'ready',
+                'running', 'paused', 'retrying', 'succeeded', 'failed', 'cancelled'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
     """)
     op.execute("""
-        CREATE TYPE mission_trigger AS ENUM (
-            'manual', 'scheduled', 'event', 'rule'
-        )
+        DO $$ BEGIN
+            CREATE TYPE mission_trigger AS ENUM (
+                'manual', 'scheduled', 'event', 'rule'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
     """)
     op.execute("""
-        CREATE TYPE step_type AS ENUM (
-            'tool', 'workflow', 'agent', 'human'
-        )
+        DO $$ BEGIN
+            CREATE TYPE step_type AS ENUM (
+                'tool', 'workflow', 'agent', 'human'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
     """)
     op.execute("""
-        CREATE TYPE step_status AS ENUM (
-            'pending', 'running', 'succeeded', 'failed', 'skipped'
-        )
+        DO $$ BEGIN
+            CREATE TYPE step_status AS ENUM (
+                'pending', 'running', 'succeeded', 'failed', 'skipped'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
     """)
 
     # missions
