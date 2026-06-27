@@ -92,8 +92,8 @@ const config: Config = {
 
       // ── Font Family ───────────────────────────────────────────────
       fontFamily: {
-        sans: ["var(--font-sans)", "system-ui", "-apple-system", "sans-serif"],
-        mono: ["var(--font-mono)", "monospace"],
+        sans: ["var(--font-inter)", "Inter", "system-ui", "-apple-system", "sans-serif"],
+        mono: ["var(--font-jetbrains)", "Fira Code", "monospace"],
       },
 
       // ── Font Weight ───────────────────────────────────────────────

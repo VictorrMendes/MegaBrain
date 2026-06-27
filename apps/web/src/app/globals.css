@@ -107,8 +107,6 @@
   --t-spring: var(--duration-normal) var(--ease-spring);
 
   /* ── Typography ─────────────────────────────────────────────── */
-  --font-sans:  var(--font-inter), var(--font-space-grotesk), "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono:  var(--font-jetbrains), "Fira Code", monospace;
 
   /* ── Font weights ────────────────────────────────────────────── */
   --weight-regular:   400;
@@ -144,9 +142,7 @@ html {
 }
 
 body {
-  background-color: var(--surface-base);
-  color: var(--text-primary);
-  font-family: var(--font-sans);
+  @apply font-sans bg-background text-content-primary;
   font-size: 13px;
   line-height: 1.6;
   height: 100%;
@@ -205,7 +201,7 @@ body {
    Typography Utilities
    ═══════════════════════════════════════════════════════════════ */
 
-.font-mono { font-family: var(--font-mono); }
+.font-mono { @apply font-mono; }
 
 .text-label {
   font-size: 10px;
@@ -216,7 +212,7 @@ body {
 }
 
 .text-code {
-  font-family: var(--font-mono);
+  @apply font-mono;
   font-size: 11px;
   color: var(--text-secondary);
   background: var(--surface-subtle);
@@ -383,7 +379,7 @@ body {
 .prose-cognitive p  { margin-bottom: 0.75em; }
 
 .prose-cognitive code {
-  font-family: var(--font-mono);
+  @apply font-mono;
   font-size: 11px;
   background: var(--surface-subtle);
   border: 1px solid var(--border-subtle);
@@ -397,7 +393,7 @@ body {
   border-radius: var(--radius-md);
   padding: 12px 16px;
   overflow-x: auto;
-  font-family: var(--font-mono);
+  @apply font-mono;
   font-size: 11px;
   line-height: 1.7;
 }
