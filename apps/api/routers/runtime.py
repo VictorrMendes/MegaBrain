@@ -90,7 +90,8 @@ async def get_runtime_status():
             .group_by(SchedulerTrigger.status)
         )
         totals: dict[str, int] = {
-            row.status.value: row.n for row in counts_result
+            (row.status.value if hasattr(row.status, "value") else row.status): row.n
+            for row in counts_result
         }
         scheduler_info = SchedulerInfo(
             active_triggers=totals.get("active", 0),
