@@ -11,7 +11,9 @@ from engines.integration.engine import IntegrationManager
 from sqlalchemy import select
 
 async def main():
-    await event_bus.connect()
+    # Bypass event bus requirement for script execution
+    event_bus.publish_event = lambda *args, **kwargs: asyncio.sleep(0)
+    
     try:
         async with AsyncSessionLocal() as session:
         # Find active workspace
@@ -40,8 +42,6 @@ async def main():
             print("Integração Docker habilitada e sincronizada com sucesso!")
         except Exception as e:
             print(f"Erro ao conectar integração: {e}")
-    finally:
-        await event_bus.disconnect()
 
 if __name__ == "__main__":
     asyncio.run(main())
