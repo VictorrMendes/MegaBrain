@@ -10,10 +10,12 @@ from models.workspace import Workspace
 from engines.integration.engine import IntegrationManager
 from sqlalchemy import select
 
+from kernel.events.bus import EventBus
+async def fake_publish(self, *args, **kwargs):
+    pass
+EventBus.publish_event = fake_publish
+
 async def main():
-    # Bypass event bus requirement for script execution
-    event_bus.publish_event = lambda *args, **kwargs: asyncio.sleep(0)
-    
     try:
         async with AsyncSessionLocal() as session:
         # Find active workspace
