@@ -93,7 +93,8 @@ class EventBus:
 
     async def publish(self, channel: str, payload: dict) -> None:
         if not self._conn:
-            raise RuntimeError("EventBus not connected")
+            logger.warning("EventBus not connected, skipping publish")
+            return
         await self._conn.execute(
             "SELECT pg_notify($1, $2)", channel, json.dumps(payload)
         )
@@ -116,7 +117,8 @@ class EventBus:
     async def publish_event(self, event: KhonshuEvent) -> None:
         """Publish a domain event on khonshu.events."""
         if not self._conn:
-            raise RuntimeError("EventBus not connected")
+            logger.warning("EventBus not connected, skipping publish")
+            return
         await self._conn.execute(
             "SELECT pg_notify($1, $2)",
             _EVENTS_CHANNEL,
@@ -139,7 +141,8 @@ class EventBus:
     async def publish_infra_event(self, event: KhonshuEvent) -> None:
         """Publish an infrastructure event on khonshu.infra."""
         if not self._conn:
-            raise RuntimeError("EventBus not connected")
+            logger.warning("EventBus not connected, skipping publish")
+            return
         await self._conn.execute(
             "SELECT pg_notify($1, $2)",
             _INFRA_CHANNEL,
