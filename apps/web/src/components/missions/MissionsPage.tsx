@@ -18,6 +18,7 @@ import {
   CheckCircle2Icon,
   CheckIcon,
   ChevronDownIcon,
+  ChevronLeftIcon,
   ChevronUpIcon,
   CircleDashedIcon,
   CircleIcon,
@@ -506,11 +507,13 @@ function MissionDetailPanel({
   onAction,
   actionLoading,
   workspaceId,
+  onBack,
 }: {
   mission:       MissionDetail;
   onAction:      (fn: () => Promise<Mission>) => Promise<void>;
   actionLoading: boolean;
   workspaceId:   string;
+  onBack?:       () => void;
 }) {
   const { done, total, pct } = calcProgress(mission.steps);
   const isLive = ACTIVE.has(mission.status);
@@ -518,7 +521,16 @@ function MissionDetailPanel({
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* ── Sticky header ── */}
-      <div className="shrink-0 border-b border-[var(--border-subtle)] bg-[var(--surface-base)] px-6 py-4">
+      <div className="shrink-0 border-b border-[var(--border-subtle)] bg-[var(--surface-base)] px-4 sm:px-6 py-4">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="md:hidden mb-3 flex items-center gap-1 text-xs text-content-muted hover:text-content-secondary transition-colors"
+          >
+            <ChevronLeftIcon size={14} />
+            Missões
+          </button>
+        )}
         <div className="flex items-start gap-3 flex-wrap">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -840,8 +852,10 @@ export function MissionsPage() {
 
       {/* ── Sidebar ── */}
       <aside className={cn(
-        "flex w-72 shrink-0 flex-col",
-        "border-r border-[var(--border-subtle)] bg-[var(--surface-raised)]",
+        "flex flex-col border-r border-[var(--border-subtle)] bg-[var(--surface-raised)]",
+        selected
+          ? "hidden md:flex md:w-72 md:shrink-0"
+          : "flex-1 md:flex-none md:w-72 md:shrink-0",
       )}>
         {/* Header */}
         <header className="flex items-center gap-2 border-b border-[var(--border-subtle)] px-4 py-3">
@@ -910,7 +924,10 @@ export function MissionsPage() {
       </aside>
 
       {/* ── Detail ── */}
-      <main className="flex-1 overflow-hidden bg-[var(--surface-base)]">
+      <main className={cn(
+        "overflow-hidden bg-[var(--surface-base)]",
+        selected ? "flex flex-1 flex-col" : "hidden md:flex md:flex-1 md:flex-col",
+      )}>
         {!selected ? (
           <div className="flex h-full flex-col items-center justify-center gap-3">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-dim">
@@ -936,6 +953,7 @@ export function MissionsPage() {
             onAction={doAction}
             actionLoading={actionLoading}
             workspaceId={workspace!.id}
+            onBack={() => setSelected(null)}
           />
         )}
       </main>

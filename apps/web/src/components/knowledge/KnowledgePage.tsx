@@ -16,6 +16,7 @@ import {
   BookOpenIcon,
   BoxIcon,
   BuildingIcon,
+  ChevronLeftIcon,
   ChevronRightIcon,
   CpuIcon,
   DatabaseIcon,
@@ -242,12 +243,14 @@ function EntityDetailPanel({
   allRelations,
   facts,
   onSelectEntity,
+  onBack,
 }: {
   entity:         KnowledgeEntity;
   allEntities:    Map<string, KnowledgeEntity>;
   allRelations:   KnowledgeRelation[];
   facts:          Fact[];
   onSelectEntity: (id: string) => void;
+  onBack?:        () => void;
 }) {
   const entityRelations = allRelations.filter(
     (r) => r.source_entity_id === entity.id || r.target_entity_id === entity.id,
@@ -258,7 +261,16 @@ function EntityDetailPanel({
   return (
     <div className="flex h-full flex-col overflow-hidden animate-fade-in">
       {/* Header */}
-      <div className="shrink-0 border-b border-[var(--border-subtle)] px-6 py-5">
+      <div className="shrink-0 border-b border-[var(--border-subtle)] px-4 sm:px-6 py-4 sm:py-5">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="md:hidden mb-3 flex items-center gap-1 text-xs text-content-muted hover:text-content-secondary transition-colors"
+          >
+            <ChevronLeftIcon size={14} />
+            Entidades
+          </button>
+        )}
         <div className="flex items-start gap-3">
           <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", color)}>
             {entityIcon(entity.type)}
@@ -633,8 +645,10 @@ export function KnowledgePage() {
         <div className="flex flex-1 overflow-hidden">
           {/* Left: entity list */}
           <aside className={cn(
-            "flex w-60 shrink-0 flex-col overflow-y-auto",
-            "border-r border-[var(--border-subtle)] bg-[var(--surface-raised)]",
+            "flex flex-col overflow-y-auto border-r border-[var(--border-subtle)] bg-[var(--surface-raised)]",
+            selectedEntity
+              ? "hidden md:flex md:w-60 md:shrink-0"
+              : "flex-1 md:flex-none md:w-60 md:shrink-0",
           )}>
             <div className="flex items-center gap-1.5 border-b border-[var(--border-subtle)] px-3 py-2">
               <BookOpenIcon size={11} className="text-content-muted" />
@@ -654,7 +668,10 @@ export function KnowledgePage() {
           </aside>
 
           {/* Right: entity detail */}
-          <main className="flex-1 overflow-hidden bg-[var(--surface-base)]">
+          <main className={cn(
+            "overflow-hidden bg-[var(--surface-base)]",
+            selectedEntity ? "flex flex-1 flex-col" : "hidden md:flex md:flex-1 md:flex-col",
+          )}>
             {!selectedEntity ? (
               <div className="flex h-full flex-col items-center justify-center gap-3">
                 <NetworkIcon size={28} className="text-content-muted" />
@@ -675,6 +692,7 @@ export function KnowledgePage() {
                   const e = entityMap.get(id);
                   if (e) setSelectedEntity(e);
                 }}
+                onBack={() => setSelectedEntity(null)}
               />
             )}
           </main>
@@ -684,7 +702,7 @@ export function KnowledgePage() {
       {/* Facts tab */}
       {tab === "facts" && (
         <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-2xl px-6 py-6 space-y-2">
+          <div className="mx-auto max-w-2xl px-4 sm:px-6 py-4 sm:py-6 space-y-2">
             {filteredFacts.length === 0 ? (
               <p className="py-16 text-center text-sm text-content-muted">
                 {search ? "Nenhum fato corresponde à busca." : "Nenhum fato registrado ainda."}
@@ -701,7 +719,7 @@ export function KnowledgePage() {
       {/* Observations tab */}
       {tab === "observations" && (
         <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-2xl px-6 py-6 space-y-2">
+          <div className="mx-auto max-w-2xl px-4 sm:px-6 py-4 sm:py-6 space-y-2">
             {filteredObs.length === 0 ? (
               <p className="py-16 text-center text-sm text-content-muted">
                 {search ? "Nenhuma observação corresponde à busca." : "Nenhuma observação registrada ainda."}

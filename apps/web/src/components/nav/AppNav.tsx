@@ -42,7 +42,7 @@ export function AppNav() {
   return (
     <nav
       className={cn(
-        "relative flex w-12 shrink-0 flex-col",
+        "relative hidden md:flex w-12 shrink-0 flex-col",
         "border-r border-[var(--border-subtle)]",
         "bg-[var(--surface-raised)]",
         "py-3 gap-0.5",

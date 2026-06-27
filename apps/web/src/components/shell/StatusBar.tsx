@@ -74,7 +74,7 @@ export function StatusBar() {
   return (
     <footer
       className={cn(
-        "flex h-[var(--statusbar-h)] shrink-0 items-center justify-between",
+        "hidden md:flex h-[var(--statusbar-h)] shrink-0 items-center justify-between",
         "border-t border-[var(--border-subtle)] bg-surface-inset",
         "px-3 z-statusbar",
       )}
@@ -134,7 +134,7 @@ export function StatusBar() {
       <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5">
         <CpuIcon size={9} className="text-content-muted opacity-40" />
         <span className="text-2xs text-content-muted opacity-60">
-          {workspace?.name ?? "PAIOS"}
+          {workspace?.name ?? "Khonshu"}
         </span>
       </div>
 

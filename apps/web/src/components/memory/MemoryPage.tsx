@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogFooter } from "@/components/ui/Dialog";
 import {
   BrainIcon,
   CalendarIcon,
+  ChevronLeftIcon,
   ChevronRightIcon,
   ClockIcon,
   PlusIcon,
@@ -246,12 +247,21 @@ function MemoryDetail({ memory: m, onClose }: { memory: Memory; onClose: () => v
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
-        <Badge variant={TYPE_BADGE[m.type] ?? "default"} size="sm">
-          {TYPE_LABEL[m.type] ?? m.type}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onClose}
+            className="md:hidden flex items-center gap-1 text-xs text-content-muted hover:text-content-secondary transition-colors mr-1"
+          >
+            <ChevronLeftIcon size={14} />
+            Voltar
+          </button>
+          <Badge variant={TYPE_BADGE[m.type] ?? "default"} size="sm">
+            {TYPE_LABEL[m.type] ?? m.type}
+          </Badge>
+        </div>
         <button
           onClick={onClose}
-          className="rounded p-1 text-content-muted hover:text-content-primary transition-colors"
+          className="hidden md:flex rounded p-1 text-content-muted hover:text-content-primary transition-colors"
         >
           <XIcon size={14} />
         </button>
@@ -517,7 +527,7 @@ export function MemoryPage() {
         <div className={cn(
           "flex flex-col border-r border-[var(--border-subtle)]",
           "transition-all duration-200",
-          selected ? "w-72 shrink-0" : "flex-1",
+          selected ? "hidden md:flex md:w-72 md:shrink-0" : "flex-1",
         )}>
           {/* Header */}
           <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">

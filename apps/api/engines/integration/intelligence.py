@@ -46,7 +46,6 @@ class IntegrationIntelligence:
         event_bus.subscribe(
             "khonshu.events",
             self._handle_event,
-            event_filter=self._is_integration_event,
         )
         logger.info("integration_intelligence.subscribed")
 
@@ -66,6 +65,8 @@ class IntegrationIntelligence:
         )
 
     async def _handle_event(self, event) -> None:
+        if not self._is_integration_event(event):
+            return
         try:
             await self._dispatch(event)
         except Exception as exc:

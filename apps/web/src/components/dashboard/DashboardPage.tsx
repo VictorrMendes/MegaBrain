@@ -212,7 +212,7 @@ export function DashboardPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-3xl px-6 py-8 animate-fade-in">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-8 animate-fade-in">
 
         {/* ══════════════════════════════════════════════
             HERO — Greeting + Quick Actions

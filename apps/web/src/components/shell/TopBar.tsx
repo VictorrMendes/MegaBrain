@@ -125,8 +125,8 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
         </div>
       </div>
 
-      {/* ── Center: Search shortcut ── */}
-      <div className="flex flex-1 justify-center">
+      {/* ── Center: Search shortcut (hidden on xs, shown sm+) ── */}
+      <div className="hidden sm:flex flex-1 justify-center">
         <button
           onClick={onOpenPalette}
           className={cn(
@@ -147,8 +147,19 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
         </button>
       </div>
 
-      {/* ── Right: Status + Notifications ── */}
+      {/* Mobile spacer */}
+      <div className="flex-1 sm:hidden" />
+
+      {/* ── Right: Search icon (mobile) + Status + Notifications ── */}
       <div className="flex items-center gap-2">
+        {/* Mobile search icon */}
+        <button
+          onClick={onOpenPalette}
+          className="flex sm:hidden h-8 w-8 items-center justify-center rounded-lg text-content-muted hover:bg-surface-subtle transition-colors"
+          title="Pesquisar"
+        >
+          <CommandIcon size={15} />
+        </button>
         {/* System status pill */}
         <StatusPill
           status="online"

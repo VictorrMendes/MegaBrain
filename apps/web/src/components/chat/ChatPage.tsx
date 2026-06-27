@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   PlusIcon,
   MessageSquareIcon,
+  MenuIcon,
   PaperclipIcon,
   FileTextIcon,
   FlaskConicalIcon,
@@ -108,6 +109,7 @@ export function ChatPage() {
   const [configValues,     setConfigValues]     = useState<Record<string, string>>({});
 
   const [sidePanel,        setSidePanel]        = useState<SidePanel | null>(null);
+  const [drawerOpen,       setDrawerOpen]       = useState(false);
 
   const fileInputRef   = useRef<HTMLInputElement>(null);
   const streamingIdRef = useRef<string | null>(null);
@@ -119,6 +121,7 @@ export function ChatPage() {
     setMessages([]);
     setActiveConvId(null);
     setSidePanel(null);
+    setDrawerOpen(false);
 
     (async () => {
       const [convs, docs, available, wPlugins] = await Promise.all([
@@ -142,6 +145,7 @@ export function ChatPage() {
   async function loadConversation(workspaceId: string, conversationId: string) {
     setActiveConvId(conversationId);
     setSidePanel(null);
+    setDrawerOpen(false);
     const msgs = await api.getMessages(workspaceId, conversationId);
     setMessages(
       msgs
@@ -390,11 +394,23 @@ export function ChatPage() {
   return (
     <div className="flex h-full overflow-hidden">
 
-      {/* ── Sidebar ── */}
+      {/* ── Mobile drawer backdrop ── */}
+      {drawerOpen && (
+        <div
+          className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 backdrop-blur-sm md:hidden animate-fade-in"
+          onClick={() => setDrawerOpen(false)}
+        />
+      )}
+
+      {/* ── Sidebar (desktop: static; mobile: slide-in drawer) ── */}
       <aside
         className={cn(
-          "flex w-52 shrink-0 flex-col",
+          "flex w-64 shrink-0 flex-col",
           "border-r border-[var(--border-subtle)] bg-[var(--surface-raised)]",
+          // Desktop: always visible
+          "hidden md:flex",
+          // Mobile: overlay drawer
+          drawerOpen && "flex fixed left-0 top-0 bottom-0 z-[var(--z-modal)] animate-slide-in-left md:relative md:inset-auto md:z-auto",
         )}
       >
         {/* Header */}
@@ -402,13 +418,23 @@ export function ChatPage() {
           <span className="text-[11px] font-semibold uppercase tracking-widest text-content-muted">
             Conversas
           </span>
-          <button
-            onClick={handleNewConversation}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-content-muted hover:bg-[var(--surface-subtle)] hover:text-content-secondary transition-colors"
-            title="Nova conversa"
-          >
-            <PlusIcon size={14} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleNewConversation}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-content-muted hover:bg-[var(--surface-subtle)] hover:text-content-secondary transition-colors touch-compact"
+              title="Nova conversa"
+            >
+              <PlusIcon size={14} />
+            </button>
+            {/* Close drawer on mobile */}
+            <button
+              onClick={() => setDrawerOpen(false)}
+              className="flex md:hidden h-7 w-7 items-center justify-center rounded-md text-content-muted hover:bg-[var(--surface-subtle)] hover:text-content-secondary transition-colors touch-compact"
+              title="Fechar"
+            >
+              <XIcon size={14} />
+            </button>
+          </div>
         </div>
 
         {/* Conversation list */}
@@ -560,16 +586,25 @@ export function ChatPage() {
         {/* Header */}
         <header
           className={cn(
-            "flex h-11 shrink-0 items-center justify-between border-b border-[var(--border-subtle)]",
-            "px-5",
+            "flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border-subtle)]",
+            "px-3 md:px-5",
           )}
         >
-          <span className="text-sm text-content-secondary truncate">
+          {/* Mobile: hamburger button */}
+          <button
+            className="flex md:hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg text-content-muted hover:bg-[var(--surface-subtle)] transition-colors touch-compact"
+            onClick={() => setDrawerOpen(true)}
+            title="Conversas"
+          >
+            <MenuIcon size={16} />
+          </button>
+
+          <span className="flex-1 text-sm text-content-secondary truncate">
             {conversations.find((c) => c.id === activeConvId)?.title ?? "Nova conversa"}
           </span>
           <div className="flex items-center gap-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-2 py-1">
             <FlaskConicalIcon size={10} className="text-accent" />
-            <span className="text-[10px] font-medium text-content-muted">Cognitive Core</span>
+            <span className="text-[10px] font-medium text-content-muted hidden sm:inline">Cognitive Core</span>
           </div>
         </header>
 
@@ -582,18 +617,36 @@ export function ChatPage() {
         <ChatInput onSend={handleSend} disabled={isStreaming} streaming={isStreaming} />
       </main>
 
-      {/* ── Side panel ── */}
+      {/* ── Side panels (desktop: aside; mobile: full-screen overlay) ── */}
       {sidePanel?.type === "reasoning" && (
-        <ReasoningPanel
-          data={sidePanel.data}
-          onClose={() => setSidePanel(null)}
-        />
+        <>
+          {/* Mobile backdrop */}
+          <div
+            className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 md:hidden"
+            onClick={() => setSidePanel(null)}
+          />
+          <div className="fixed inset-x-0 bottom-0 z-[var(--z-modal)] max-h-[85dvh] overflow-y-auto md:relative md:inset-auto md:z-auto md:max-h-none md:overflow-visible">
+            <ReasoningPanel
+              data={sidePanel.data}
+              onClose={() => setSidePanel(null)}
+            />
+          </div>
+        </>
       )}
       {sidePanel?.type === "context" && (
-        <ContextPanel
-          data={sidePanel.data}
-          onClose={() => setSidePanel(null)}
-        />
+        <>
+          {/* Mobile backdrop */}
+          <div
+            className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 md:hidden"
+            onClick={() => setSidePanel(null)}
+          />
+          <div className="fixed inset-x-0 bottom-0 z-[var(--z-modal)] max-h-[85dvh] overflow-y-auto md:relative md:inset-auto md:z-auto md:max-h-none md:overflow-visible">
+            <ContextPanel
+              data={sidePanel.data}
+              onClose={() => setSidePanel(null)}
+            />
+          </div>
+        </>
       )}
 
       {/* ── Plugin config modal ── */}
