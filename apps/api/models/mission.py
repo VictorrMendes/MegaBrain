@@ -11,6 +11,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models.base import Base
 
 
+def _enum_values(e):
+    return [x.value for x in e]
+
+
 class MissionStatus(enum.StrEnum):
     PENDING = "pending"
     PLANNING = "planning"
@@ -79,10 +83,11 @@ class StepStatus(enum.StrEnum):
 
 
 class FailurePolicy(enum.StrEnum):
-    retry  = "retry"   # retry up to max_retries (default)
-    abort  = "abort"   # fail the mission immediately
-    skip   = "skip"    # mark step skipped, continue
-    ignore = "ignore"  # log the error, continue (alias for skip with different audit intent)
+    retry = "retry"    # retry up to max_retries (default)
+    abort = "abort"    # fail the mission immediately
+    skip = "skip"      # mark step skipped, continue
+    # log the error, continue (alias for skip with different audit intent)
+    ignore = "ignore"
 
 
 class ExecutionPlanStatus(enum.StrEnum):
@@ -121,7 +126,12 @@ class ExecutionPlan(Base):
     )
     planner: Mapped[str | None] = mapped_column(sa.Text(), nullable=True)
     status: Mapped[ExecutionPlanStatus] = mapped_column(
-        sa.Enum(ExecutionPlanStatus, name="execution_plan_status"),
+        sa.Enum(
+            ExecutionPlanStatus,
+            name="execution_plan_status",
+            values_callable=_enum_values,
+            create_type=False,
+        ),
         nullable=False,
         default=ExecutionPlanStatus.DRAFT,
         index=True,
@@ -167,7 +177,12 @@ class Mission(Base):
     )
     intent: Mapped[str] = mapped_column(sa.Text(), nullable=False)
     status: Mapped[MissionStatus] = mapped_column(
-        sa.Enum(MissionStatus, name="mission_status"),
+        sa.Enum(
+            MissionStatus,
+            name="mission_status",
+            values_callable=_enum_values,
+            create_type=False,
+        ),
         nullable=False,
         default=MissionStatus.PENDING,
         index=True,
@@ -175,7 +190,12 @@ class Mission(Base):
     planner: Mapped[str | None] = mapped_column(sa.Text(), nullable=True)
     executor: Mapped[str | None] = mapped_column(sa.Text(), nullable=True)
     trigger: Mapped[MissionTrigger] = mapped_column(
-        sa.Enum(MissionTrigger, name="mission_trigger"),
+        sa.Enum(
+            MissionTrigger,
+            name="mission_trigger",
+            values_callable=_enum_values,
+            create_type=False,
+        ),
         nullable=False,
         default=MissionTrigger.MANUAL,
     )
@@ -227,7 +247,9 @@ class Mission(Base):
     )
 
     def can_transition_to(self, target: MissionStatus) -> bool:
-        allowed: set = MissionStatus.TRANSITIONS.get(self.status, set())  # type: ignore[attr-defined]
+        allowed: set = MissionStatus.TRANSITIONS.get(  # type: ignore[attr-defined]
+            self.status, set()
+        )
         return target in allowed
 
 
@@ -256,7 +278,12 @@ class MissionStep(Base):
     )
     order: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
     type: Mapped[StepType] = mapped_column(
-        sa.Enum(StepType, name="step_type"),
+        sa.Enum(
+            StepType,
+            name="step_type",
+            values_callable=_enum_values,
+            create_type=False,
+        ),
         nullable=False,
         default=StepType.TOOL,
     )
@@ -266,7 +293,12 @@ class MissionStep(Base):
     )
     output: Mapped[dict | None] = mapped_column(JSONB(), nullable=True)
     status: Mapped[StepStatus] = mapped_column(
-        sa.Enum(StepStatus, name="step_status"),
+        sa.Enum(
+            StepStatus,
+            name="step_status",
+            values_callable=_enum_values,
+            create_type=False,
+        ),
         nullable=False,
         default=StepStatus.PENDING,
         index=True,
@@ -281,7 +313,12 @@ class MissionStep(Base):
         sa.Integer(), nullable=False, server_default="0"
     )
     failure_policy: Mapped[FailurePolicy] = mapped_column(
-        sa.Enum(FailurePolicy, name="failure_policy"),
+        sa.Enum(
+            FailurePolicy,
+            name="failure_policy",
+            values_callable=_enum_values,
+            create_type=False,
+        ),
         nullable=False,
         server_default="retry",
     )

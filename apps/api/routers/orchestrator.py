@@ -185,7 +185,7 @@ async def stream(
             resp = _to_response(result)
             yield _sse({
                 "event": "done",
-                "response": resp.model_dump(),
+                "response": resp.model_dump(mode="json"),
             })
 
         except Exception as exc:

@@ -11,6 +11,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from models.base import Base
 
 
+def _enum_values(e):
+    return [x.value for x in e]
+
+
 class TriggerType(enum.StrEnum):
     temporal = "temporal"   # cron expression
     event = "event"         # domain event reaction
@@ -48,12 +52,22 @@ class SchedulerTrigger(Base):
         sa.Text(), nullable=True
     )
     type: Mapped[TriggerType] = mapped_column(
-        sa.Enum(TriggerType, name="trigger_type"),
+        sa.Enum(
+            TriggerType,
+            name="trigger_type",
+            values_callable=_enum_values,
+            create_type=False,
+        ),
         nullable=False,
         index=True,
     )
     status: Mapped[TriggerStatus] = mapped_column(
-        sa.Enum(TriggerStatus, name="trigger_status"),
+        sa.Enum(
+            TriggerStatus,
+            name="trigger_status",
+            values_callable=_enum_values,
+            create_type=False,
+        ),
         nullable=False,
         default=TriggerStatus.active,
         index=True,
