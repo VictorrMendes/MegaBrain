@@ -1,9 +1,15 @@
 import type { Metadata, Viewport } from "next";
-import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Inter, Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import { ShellLayout } from "@/components/shell/ShellLayout";
 import "./globals.css";
 
 // ── Fonts ────────────────────────────────────────────────────────────────────
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -45,7 +51,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <body className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} antialiased`}>
+      <body className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} antialiased`}>
         <ShellLayout>{children}</ShellLayout>
       </body>
     </html>

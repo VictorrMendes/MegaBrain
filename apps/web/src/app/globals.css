@@ -9,30 +9,30 @@
 
 :root {
   /* ── Surfaces — 5 camadas de profundidade ───────────────────── */
-  --surface-base:    #08080c;   /* fundo absoluto */
-  --surface-raised:  #0f0f15;   /* cards, painéis */
-  --surface-overlay: #16161e;   /* overlays, modais */
-  --surface-subtle:  #1a1a23;   /* hover, seleção */
-  --surface-inset:   #05050a;   /* depress, inset */
+  --surface-base:    #0B0F14;   /* fundo absoluto */
+  --surface-raised:  #111827;   /* cards, painéis */
+  --surface-overlay: #111827;   /* overlays, modais */
+  --surface-subtle:  #1A2232;   /* hover, seleção */
+  --surface-inset:   #090C10;   /* depress, inset */
 
   /* ── Borders ────────────────────────────────────────────────── */
-  --border-subtle:   rgba(255, 255, 255, 0.04);
-  --border-default:  rgba(255, 255, 255, 0.07);
-  --border-strong:   rgba(255, 255, 255, 0.11);
-  --border-accent:   rgba(99, 102, 241, 0.35);
+  --border-subtle:   rgba(38, 48, 65, 0.4);
+  --border-default:  #263041;
+  --border-strong:   rgba(38, 48, 65, 0.8);
+  --border-accent:   rgba(59, 130, 246, 0.35);
 
-  /* ── Accent — Indigo. Identidade única. ─────────────────────── */
-  --accent:          #6366f1;
-  --accent-hover:    #818cf8;
-  --accent-dim:      rgba(99, 102, 241, 0.14);
-  --accent-subtle:   rgba(99, 102, 241, 0.07);
+  /* ── Accent — Azul AI. Identidade única. ─────────────────────── */
+  --accent:          #3B82F6;
+  --accent-hover:    #60A5FA;
+  --accent-dim:      rgba(59, 130, 246, 0.14);
+  --accent-subtle:   rgba(59, 130, 246, 0.07);
   --accent-fg:       #ffffff;
 
   /* ── Text ───────────────────────────────────────────────────── */
-  --text-primary:     #f0f0f4;
-  --text-secondary:   #8e8ea8;
-  --text-muted:       #4a4a5c;
-  --text-placeholder: #35353f;
+  --text-primary:     #E6EDF3;
+  --text-secondary:   #9AA4B2;
+  --text-muted:       #6B7280;
+  --text-placeholder: #4B5563;
 
   /* ── Status ─────────────────────────────────────────────────── */
   --status-success: #22c55e;
@@ -54,12 +54,12 @@
   --shadow-md:     0 4px 16px rgba(0, 0, 0, 0.5);
   --shadow-lg:     0 8px 32px rgba(0, 0, 0, 0.6);
   --shadow-xl:     0 16px 48px rgba(0, 0, 0, 0.7);
-  --shadow-glow:   0 0 24px rgba(99, 102, 241, 0.22);
-  --shadow-glow-sm: 0 0 12px rgba(99, 102, 241, 0.16);
+  --shadow-glow:   0 0 24px rgba(59, 130, 246, 0.22);
+  --shadow-glow-sm: 0 0 12px rgba(59, 130, 246, 0.16);
 
   /* ── Glassmorphism ───────────────────────────────────────────── */
-  --glass-bg:      rgba(15, 15, 21, 0.72);
-  --glass-border:  rgba(255, 255, 255, 0.06);
+  --glass-bg:      rgba(17, 24, 39, 0.7);
+  --glass-border:  rgba(38, 48, 65, 0.6);
   --glass-blur:    12px;
   --glass-blur-sm: 8px;
   --glass-blur-lg: 20px;
@@ -107,7 +107,7 @@
   --t-spring: var(--duration-normal) var(--ease-spring);
 
   /* ── Typography ─────────────────────────────────────────────── */
-  --font-sans:  var(--font-space-grotesk), "Inter", system-ui, -apple-system, sans-serif;
+  --font-sans:  var(--font-inter), var(--font-space-grotesk), "Inter", system-ui, -apple-system, sans-serif;
   --font-mono:  var(--font-jetbrains), "Fira Code", monospace;
 
   /* ── Font weights ────────────────────────────────────────────── */
@@ -282,8 +282,8 @@ body {
 }
 
 @keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 8px rgba(99, 102, 241, 0.2); }
-  50%       { box-shadow: 0 0 20px rgba(99, 102, 241, 0.45); }
+  0%, 100% { box-shadow: 0 0 8px rgba(59, 130, 246, 0.2); }
+  50%       { box-shadow: 0 0 20px rgba(59, 130, 246, 0.45); }
 }
 
 @keyframes spin {
