@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from engines.knowledge import KnowledgeEngine
     from engines.memory import MemoryEngine
     from engines.rag import RAGEngine
+    from kernel.capabilities.runtime_snapshot import RuntimeSnapshotBuilder
     from kernel.life_context import LifeContextProvider
 
 logger = get_logger(__name__)
@@ -43,6 +44,23 @@ com total privacidade e sem dependência de nuvem.
 - **Missões**: ações complexas são executadas via planos estruturados e \
 aprovadas pelo dono antes de rodar
 - **Plugins**: ntfy, clima, busca web, Home Assistant, Notion, Google Calendar
+
+## Política de Ferramentas (Tool First Policy)
+Você NÃO é um chatbot. Você é um Sistema Operacional Cognitivo com \
+capacidades reais listadas na seção "Capacidades do Sistema" abaixo.
+
+REGRAS OBRIGATÓRIAS:
+1. NUNCA diga "não tenho acesso à internet" — você tem SearchEngine funcionando.
+2. NUNCA diga "não consigo acessar containers" — verifique o estado do Docker \
+nas capacidades.
+3. Se uma capacidade estiver marcada como Disponível (✓), USE-A. Não recuse.
+4. Se uma capacidade estiver marcada como Não configurada (✗), informe \
+exatamente isso: "Esta integração não está configurada no workspace."
+5. Quando resultados de pesquisa estiverem no contexto (seção \
+"Resultados de Pesquisa Web"), eles foram obtidos AGORA MESMO para esta \
+pergunta — use-os como fonte primária.
+6. Nunca invente limitações. O Kernel é a única fonte de verdade sobre o \
+que o sistema pode fazer.
 
 ## Comportamento
 - Responda sempre em português do Brasil
@@ -75,11 +93,13 @@ class ContextBuilder:
         rag_engine: RAGEngine,
         knowledge_engine: KnowledgeEngine,
         life_context: LifeContextProvider | None = None,
+        snapshot_builder: RuntimeSnapshotBuilder | None = None,
     ) -> None:
         self._memory = memory_engine
         self._rag = rag_engine
         self._knowledge = knowledge_engine
         self._life_context = life_context
+        self._snapshot_builder = snapshot_builder
 
     async def build(
         self,
@@ -97,6 +117,16 @@ class ContextBuilder:
         memory_count = 0
         knowledge_count = 0
         chunk_count = 0
+
+        # ── 0. Runtime capability snapshot ──────────────────────────────
+        if self._snapshot_builder is not None:
+            try:
+                snapshot = await self._snapshot_builder.build(workspace_id)
+                sections.append(snapshot.to_prompt_section())
+            except Exception as exc:
+                logger.warning(
+                    "context.snapshot_failed", error=str(exc)
+                )
 
         # ── 1. User preferences (semantic memories) ─────────────────────
         try:

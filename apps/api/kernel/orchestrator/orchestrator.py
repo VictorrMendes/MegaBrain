@@ -1,27 +1,32 @@
 """CognitiveOrchestrator — the executive brain of Khonshu.
 
-Coordinates the full cognitive pipeline for every user request:
-  1. Build base context          (ContextBuilder)
-  2. Decide routing              (DecisionEngine)
-  3. Optional: web search        (SearchEngine)
-  4. Optional: create mission    (MissionEngine)
-  5. Generate response           (LLMProvider)
-  6. Learn from the exchange     (LearningEngine)
+ADR-011: Tool-First Architecture.
 
-No engine knows about the orchestrator. The orchestrator knows all
-engines. Dependency direction is strictly one-way: router → orchestrator
-→ engines.
+Pipeline:
+  1. Build base context    (ContextBuilder — memory, knowledge, RAG, capabilities)
+  2. Route intent          (IntentRouter — deterministic keyword analysis)
+  3. Decide routing        (DecisionEngine LLM — merges with IntentRouter flags)
+  4. Execute capabilities  (CapabilityExecutor — search, integrations, missions)
+  5. Generate response     (LLMProvider — only interprets Kernel outputs)
+  6. Validate response     (CapabilityValidator — reject hallucinated limitations)
+  7. Learn                 (LearningEngine)
+
+The LLM never calls tools directly. It receives data produced by the Kernel
+and synthesizes a response. The Kernel is the source of truth.
 """
 from __future__ import annotations
 
 import contextlib
+import re
 from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 from kernel.logger import get_logger
 from kernel.providers.base import ChatMessage, LLMProvider
 
+from .capability_executor import CapabilityExecutor, CapabilityResult
 from .decision import DecisionEngine
+from .intent_router import IntentFlags, IntentRouter
 from .learning import LearningEngine
 from .models import (
     ConversationResult,
@@ -35,18 +40,29 @@ from .models import (
 )
 from .trace import ReasoningTrace
 
-# Callback type for streaming LLM tokens
 TokenCallback = Callable[[str], Awaitable[None]]
 
 logger = get_logger("khonshu.orchestrator")
 
+# Phrases the LLM must never emit when the capability is active
+_INVALID_SEARCH_PHRASES = [
+    r"não tenho acesso à internet",
+    r"nao tenho acesso a internet",
+    r"não possuo acesso à internet",
+    r"sem acesso à internet",
+    r"não consigo acessar a internet",
+    r"não tenho capacidade de buscar",
+    r"não posso pesquisar",
+]
+_INVALID_DOCKER_PHRASES = [
+    r"não consigo acessar containers",
+    r"não tenho acesso ao docker",
+    r"não posso monitorar containers",
+]
+
 
 class CognitiveOrchestrator:
-    """Coordinates all cognitive engines for a single user request.
-
-    All constructor parameters except the first four are optional so
-    the orchestrator degrades gracefully when an engine is unavailable.
-    """
+    """Coordinates all cognitive engines for a single user request."""
 
     def __init__(
         self,
@@ -54,10 +70,9 @@ class CognitiveOrchestrator:
         decision_engine: DecisionEngine,
         learning_engine: LearningEngine,
         llm_provider: LLMProvider,
+        capability_executor: CapabilityExecutor | None = None,
         memory_engine=None,
         knowledge_engine=None,
-        search_engine=None,
-        mission_engine=None,
         metrics=None,
         session_factory=None,
     ) -> None:
@@ -65,12 +80,12 @@ class CognitiveOrchestrator:
         self._decision = decision_engine
         self._learning = learning_engine
         self._llm = llm_provider
+        self._executor = capability_executor or CapabilityExecutor()
         self._memory = memory_engine
         self._knowledge = knowledge_engine
-        self._search = search_engine
-        self._mission = mission_engine
         self._metrics = metrics
-        self._sessions = session_factory  # for persisting chat messages
+        self._sessions = session_factory
+        self._intent_router = IntentRouter()
 
     # ------------------------------------------------------------------ #
     # Public API                                                           #
@@ -79,14 +94,9 @@ class CognitiveOrchestrator:
     async def execute(
         self,
         request: OrchestratorRequest,
-        on_step: Callable[["TraceNode"], Awaitable[None]] | None = None,
+        on_step: Callable[[TraceNode], Awaitable[None]] | None = None,
         on_token: TokenCallback | None = None,
     ) -> OrchestratorResponse:
-        """Run the full cognitive pipeline and return a rich response.
-
-        on_step: called after each pipeline step (trace streaming).
-        on_token: called for each LLM text token (word-level streaming).
-        """
         workspace_id = UUID(request.workspace_id)
         trace = ReasoningTrace()
 
@@ -95,41 +105,53 @@ class CognitiveOrchestrator:
         if on_step:
             await on_step(trace.nodes[-1])
 
-        # ── 2. Decide routing ────────────────────────────────────────────
-        decision = await self._decide(request, trace)
+        # ── 2. Route intent (deterministic) ─────────────────────────────
+        intent = self._route_intent(request.message, trace)
         if on_step:
             await on_step(trace.nodes[-1])
 
-        # ── 3. Optional: web search ──────────────────────────────────────
-        search_context, internet_sources = await self._maybe_search(
-            request, workspace_id, decision, trace
+        # ── 3. Decide routing (LLM, merged with intent flags) ────────────
+        decision = await self._decide(request, intent, trace)
+        if on_step:
+            await on_step(trace.nodes[-1])
+
+        # ── 4. Execute capabilities ──────────────────────────────────────
+        conv_id = (
+            UUID(request.conversation_id)
+            if request.conversation_id else None
         )
-        if on_step:
-            await on_step(trace.nodes[-1])
-
-        # ── 4. Optional: create mission ──────────────────────────────────
-        missions_created = await self._maybe_create_mission(
-            request, workspace_id, decision, trace
+        requires_approval = (
+            decision.need_confirmation
+            or decision.risk_level != RiskLevel.low
+        )
+        cap_result = await self._executor.execute(
+            message=request.message,
+            workspace_id=workspace_id,
+            decision=decision,
+            intent=intent,
+            trace=trace,
+            requires_approval=requires_approval,
+            conversation_id=conv_id,
         )
         if on_step:
             await on_step(trace.nodes[-1])
 
         # ── 5. Generate response ─────────────────────────────────────────
         response_text = await self._generate(
-            request, ctx, search_context, trace, on_token
+            request, ctx, cap_result, trace, on_token
         )
         if on_step:
             await on_step(trace.nodes[-1])
 
-        # ── 6. Learn ─────────────────────────────────────────────────────
+        # ── 6. Validate response ─────────────────────────────────────────
+        response_text = await self._validate_response(
+            response_text, cap_result, intent, trace
+        )
+
+        # ── 7. Learn ─────────────────────────────────────────────────────
         learning_actions = await self._maybe_learn(
-            request,
-            decision,
-            response_text,
-            ctx,
-            missions_created,
-            workspace_id,
-            trace,
+            request, decision, response_text, ctx,
+            cap_result.missions_created, workspace_id, trace,
         )
         if on_step:
             await on_step(trace.nodes[-1])
@@ -141,24 +163,22 @@ class CognitiveOrchestrator:
             confidence=decision.confidence,
             risk=decision.risk_level,
             sources=[],
-            capabilities_used=[],
-            missions_created=missions_created,
+            capabilities_used=cap_result.capabilities_used,
+            missions_created=cap_result.missions_created,
             learning_actions=learning_actions,
             thinking_steps=trace.thinking_steps(),
             memory_used=ctx.memory_count,
             knowledge_used=ctx.knowledge_count,
-            internet_sources=internet_sources,
+            internet_sources=cap_result.internet_sources,
             integrations_used=[],
             planner_used=decision.need_planner,
-            mission_created=bool(missions_created),
+            mission_created=bool(cap_result.missions_created),
             estimated_cost=decision.estimated_cost,
             estimated_time=decision.estimated_latency,
             approval_required=decision.need_confirmation,
         )
 
-        # ── 7. Persist to conversation ───────────────────────────────────
         await self._persist_conversation(request, response_text)
-
         return orch_response
 
     # ------------------------------------------------------------------ #
@@ -187,7 +207,13 @@ class CognitiveOrchestrator:
             self._metrics.record_knowledge_hit(ctx.knowledge_count)
         return ctx
 
-    async def _decide(self, request, trace):
+    def _route_intent(self, message: str, trace: ReasoningTrace) -> IntentFlags:
+        node = trace.begin("intent_route", "IntentRouter")
+        intent = self._intent_router.analyze(message)
+        trace.complete(node, intent.summary() or "none")
+        return intent
+
+    async def _decide(self, request, intent: IntentFlags, trace):
         node = trace.begin("decide", "DecisionEngine")
         _metrics_ctx = (
             self._metrics.time_planning()
@@ -195,99 +221,44 @@ class CognitiveOrchestrator:
         )
         with _metrics_ctx:
             decision = await self._decision.decide(request.message)
+
+        # Merge: IntentRouter flags take priority (OR semantics)
+        if intent.need_search:
+            decision.need_search = True
+        if intent.need_integrations:
+            decision.need_integrations = True
+        if intent.need_mission:
+            decision.need_mission = True
+            decision.need_planner = True
+        if intent.need_memory:
+            decision.need_memory = True
+
         label = decision.reason or f"risk={decision.risk_level.value}"
+        if intent.detected:
+            label = f"intent=[{intent.summary()}] {label}"
         trace.complete(node, label)
         return decision
-
-    async def _maybe_search(self, request, workspace_id, decision, trace):
-        if not decision.need_search or self._search is None:
-            reason = (
-                "not needed"
-                if not decision.need_search
-                else "engine unavailable"
-            )
-            trace.skip("search", "SearchEngine", reason)
-            return "", 0
-
-        node = trace.begin("search", "SearchEngine")
-        try:
-            result = await self._search.search(
-                request.message, workspace_id
-            )
-            summary = result.get("summary", "")
-            count = result.get("count", 0)
-            trace.complete(node, f"{count} results")
-            if self._metrics:
-                self._metrics.record_web_search()
-            return summary, count
-        except Exception as exc:
-            trace.fail(node, str(exc))
-            logger.warning("orchestrator.search_failed", error=str(exc))
-            return "", 0
-
-    async def _maybe_create_mission(
-        self, request, workspace_id, decision, trace
-    ):
-        if not decision.need_mission or self._mission is None:
-            reason = (
-                "not needed"
-                if not decision.need_mission
-                else "engine unavailable"
-            )
-            trace.skip("create_mission", "MissionEngine", reason)
-            return []
-
-        node = trace.begin("create_mission", "MissionEngine")
-        try:
-            from models.mission import MissionTrigger
-            requires_approval = (
-                decision.need_confirmation
-                or decision.risk_level != RiskLevel.low
-            )
-            conv_id = (
-                UUID(request.conversation_id)
-                if request.conversation_id else None
-            )
-            mission = await self._mission.create(
-                workspace_id=workspace_id,
-                intent=request.message,
-                trigger=MissionTrigger.MANUAL,
-                requires_approval=requires_approval,
-                conversation_id=conv_id,
-            )
-            mission_ids = [str(mission.id)]
-            trace.complete(node, f"mission {str(mission.id)[:8]}…")
-            if self._metrics:
-                self._metrics.record_auto_mission()
-            return mission_ids
-        except Exception as exc:
-            trace.fail(node, str(exc))
-            logger.warning(
-                "orchestrator.mission_create_failed", error=str(exc)
-            )
-            return []
 
     async def _generate(
         self,
         request,
         ctx,
-        search_context,
+        cap_result: CapabilityResult,
         trace,
         on_token: TokenCallback | None = None,
     ):
         node = trace.begin("generate", "LLMProvider")
-        enriched_prompt = ctx.system_prompt
-        if search_context:
-            enriched_prompt += (
-                "\n\n## Resultados de Pesquisa Web\n" + search_context
-            )
+
+        prompt_parts = [ctx.system_prompt]
+        prompt_parts.extend(cap_result.to_prompt_sections())
+        enriched_prompt = "\n\n".join(prompt_parts)
+
         messages = [
             ChatMessage(role="system", content=enriched_prompt),
             ChatMessage(role="user", content=request.message),
         ]
         try:
             if on_token is not None:
-                # True token streaming — emit each chunk immediately
                 chunks: list[str] = []
                 async for chunk in self._llm.chat_stream(messages):
                     chunks.append(chunk)
@@ -303,16 +274,60 @@ class CognitiveOrchestrator:
             trace.fail(node, str(exc))
             raise
 
+    async def _validate_response(
+        self,
+        response: str,
+        cap_result: CapabilityResult,
+        intent: IntentFlags,
+        trace: ReasoningTrace,
+    ) -> str:
+        """Reject responses that claim unavailable limitations.
+
+        If search was executed and the response says "não tenho acesso à
+        internet", replace the response with the actual search data.
+        """
+        invalid = False
+
+        if cap_result.search_summary:
+            for pattern in _INVALID_SEARCH_PHRASES:
+                if re.search(pattern, response, re.IGNORECASE):
+                    invalid = True
+                    break
+
+        if cap_result.docker_summary:
+            for pattern in _INVALID_DOCKER_PHRASES:
+                if re.search(pattern, response, re.IGNORECASE):
+                    invalid = True
+                    break
+
+        if invalid:
+            node = trace.begin("validate", "CapabilityValidator")
+            trace.fail(node, "response denied available capability — corrected")
+            logger.warning(
+                "orchestrator.invalid_response_corrected",
+                search_available=bool(cap_result.search_summary),
+            )
+            # Build a corrected response from available tool outputs
+            sections = cap_result.to_prompt_sections()
+            if sections:
+                return (
+                    "**[Resposta corrigida pelo Kernel]**\n\n"
+                    + "\n\n".join(sections)
+                )
+
+        return response
+
     async def _persist_conversation(
         self, request: OrchestratorRequest, response_text: str
     ) -> None:
-        """Save the user ↔ assistant exchange to the conversations table."""
         if self._sessions is None or not request.conversation_id:
             return
         try:
-            from models.conversation import Message, MessageRole
-            from sqlalchemy import select
-            from models.conversation import Conversation
+            from models.conversation import (  # noqa: F401
+                Conversation,
+                Message,
+                MessageRole,
+            )
 
             conv_id = UUID(request.conversation_id)
             async with self._sessions() as session:

@@ -1,4 +1,6 @@
+from .capability_executor import CapabilityExecutor, CapabilityResult
 from .decision import DecisionEngine
+from .intent_router import IntentFlags, IntentRouter
 from .learning import LearningEngine
 from .models import (
     ConversationResult,
@@ -30,4 +32,8 @@ __all__ = [
     "OrchestratorRequest",
     "OrchestratorResponse",
     "RiskLevel",
+    "CapabilityExecutor",
+    "CapabilityResult",
+    "IntentRouter",
+    "IntentFlags",
 ]

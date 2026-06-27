@@ -18,8 +18,9 @@ from engines.rag import RAGEngine
 from engines.scheduler import SchedulerEngine
 from engines.search import SearchEngine
 from kernel.capabilities.reasoner import CapabilityReasoner
-from kernel.context import ContextBuilder
+from kernel.capabilities.runtime_snapshot import RuntimeSnapshotBuilder
 from kernel.cognitive_loop import CognitiveLoop
+from kernel.context import ContextBuilder
 from kernel.health import ComponentHealth, HealthReport
 from kernel.life_context import LifeContextProvider
 from kernel.logger import get_logger
@@ -29,6 +30,7 @@ from kernel.orchestrator import (
     DecisionEngine,
     LearningEngine,
 )
+from kernel.orchestrator.capability_executor import CapabilityExecutor
 from kernel.providers.ollama import OllamaProvider
 
 logger = get_logger(__name__)
@@ -139,11 +141,25 @@ class KhonshuRuntime:
             life_context_provider=self._life_context,
             knowledge_engine=self._knowledge,
         )
+        snapshot_builder = RuntimeSnapshotBuilder(
+            has_search=True,
+            has_memory=True,
+            has_knowledge=True,
+            has_missions=True,
+            has_scheduler=True,
+            has_briefings=True,
+            has_plugins=True,
+            has_obsidian=True,
+            has_cognitive_loop=True,
+            has_event_bus=True,
+            integration_manager=self._integration,
+        )
         self._context = ContextBuilder(
             memory_engine=self._memory,
             rag_engine=self._rag,
             knowledge_engine=self._knowledge,
             life_context=self._life_context,
+            snapshot_builder=snapshot_builder,
         )
         self._decision_engine = DecisionEngine(
             llm_provider=self._llm,
@@ -151,15 +167,19 @@ class KhonshuRuntime:
         self._learning_engine = LearningEngine(
             llm_provider=self._llm,
         )
+        capability_executor = CapabilityExecutor(
+            search_engine=self._search,
+            mission_engine=self._mission,
+            integration_manager=self._integration,
+        )
         self._orchestrator = CognitiveOrchestrator(
             context_builder=self._context,
             decision_engine=self._decision_engine,
             learning_engine=self._learning_engine,
             llm_provider=self._llm,
+            capability_executor=capability_executor,
             memory_engine=self._memory,
             knowledge_engine=self._knowledge,
-            search_engine=self._search,
-            mission_engine=self._mission,
             metrics=self._metrics,
             session_factory=AsyncSessionLocal,
         )

@@ -1,0 +1,311 @@
+"""CapabilityExecutor — centralized execution layer between Decision and Generate.
+
+Implements ADR-011: Tool-First Architecture.
+
+Principles:
+  - The Kernel decides which tools to run (Decision + IntentRouter).
+  - The LLM never calls tools directly.
+  - Every capability has exactly one executor path here.
+  - All results are collected before the LLM is invoked.
+  - The LLM only interprets and synthesizes; the Kernel produces the data.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+from uuid import UUID
+
+from kernel.logger import get_logger
+
+if TYPE_CHECKING:
+    from engines.mission import MissionEngine
+    from engines.search import SearchEngine
+    from kernel.orchestrator.intent_router import IntentFlags
+    from kernel.orchestrator.models import Decision
+    from kernel.orchestrator.trace import ReasoningTrace
+
+logger = get_logger("khonshu.capability_executor")
+
+
+@dataclass
+class CapabilityResult:
+    """All data collected by the executor for a single request."""
+
+    search_summary: str = ""
+    search_count: int = 0
+    search_query: str = ""
+    docker_summary: str = ""
+    calendar_summary: str = ""
+    weather_summary: str = ""
+    email_summary: str = ""
+    missions_created: list[str] = field(default_factory=list)
+    capabilities_used: list[str] = field(default_factory=list)
+    internet_sources: int = 0
+
+    def has_tool_output(self) -> bool:
+        return bool(
+            self.search_summary
+            or self.docker_summary
+            or self.calendar_summary
+            or self.weather_summary
+            or self.email_summary
+        )
+
+    def to_prompt_sections(self) -> list[str]:
+        """Build prompt sections from tool outputs.
+
+        Each section is labeled so the LLM knows it was produced by the
+        Kernel right now — not from training data.
+        """
+        sections: list[str] = []
+
+        if self.search_summary:
+            sections.append(
+                f"## Resultados de Pesquisa Web\n"
+                f"(Obtidos pelo Kernel agora para: '{self.search_query}')\n\n"
+                f"{self.search_summary}\n\n"
+                "Use os resultados acima como fonte primária. "
+                "Não afirme que não possui acesso à internet — "
+                "a pesquisa já foi executada."
+            )
+
+        if self.docker_summary:
+            sections.append(
+                f"## Estado dos Containers Docker\n{self.docker_summary}"
+            )
+
+        if self.calendar_summary:
+            sections.append(
+                f"## Agenda / Calendário\n{self.calendar_summary}"
+            )
+
+        if self.weather_summary:
+            sections.append(
+                f"## Clima Atual\n{self.weather_summary}"
+            )
+
+        if self.email_summary:
+            sections.append(
+                f"## E-mails\n{self.email_summary}"
+            )
+
+        return sections
+
+
+class CapabilityExecutor:
+    """Executes all capabilities determined by Decision + IntentFlags.
+
+    Injected into CognitiveOrchestrator. Replaces scattered _maybe_search /
+    _maybe_create_mission methods with a single authoritative execution step.
+    """
+
+    def __init__(
+        self,
+        search_engine: SearchEngine | None = None,
+        mission_engine: MissionEngine | None = None,
+        integration_manager=None,
+    ) -> None:
+        self._search = search_engine
+        self._mission = mission_engine
+        self._integrations = integration_manager
+
+    async def execute(
+        self,
+        message: str,
+        workspace_id: UUID,
+        decision: Decision,
+        intent: IntentFlags,
+        trace: ReasoningTrace,
+        requires_approval: bool = False,
+        conversation_id: UUID | None = None,
+    ) -> CapabilityResult:
+        result = CapabilityResult()
+
+        await self._run_search(
+            message, workspace_id, decision, intent, trace, result
+        )
+        await self._run_integrations(
+            workspace_id, intent, trace, result
+        )
+        await self._run_mission(
+            message, workspace_id, decision, intent, trace,
+            requires_approval, conversation_id, result,
+        )
+
+        return result
+
+    # ------------------------------------------------------------------ #
+    # Search                                                               #
+    # ------------------------------------------------------------------ #
+
+    async def _run_search(
+        self, message, workspace_id, decision, intent, trace, result
+    ) -> None:
+        need = decision.need_search or intent.need_search
+        if not need:
+            trace.skip("search", "SearchEngine", "not needed")
+            return
+        if self._search is None:
+            trace.skip("search", "SearchEngine", "engine unavailable")
+            result.search_summary = (
+                "A pesquisa foi solicitada, mas o SearchEngine "
+                "não está disponível no momento."
+            )
+            return
+
+        node = trace.begin("search", "SearchEngine")
+        try:
+            data = await self._search.search(message, workspace_id)
+            result.search_summary = data.get("summary", "")
+            result.search_count = data.get("count", 0)
+            result.search_query = message
+            result.internet_sources = result.search_count
+            result.capabilities_used.append("web_search")
+            trace.complete(node, f"{result.search_count} results")
+        except Exception as exc:
+            trace.fail(node, str(exc))
+            logger.warning("capability_executor.search_failed", error=str(exc))
+            result.search_summary = (
+                "A pesquisa foi executada mas encontrou um erro: "
+                f"{exc}. Nenhum resultado disponível."
+            )
+
+    # ------------------------------------------------------------------ #
+    # Integrations (Docker, Calendar, Weather, Email)                     #
+    # ------------------------------------------------------------------ #
+
+    async def _run_integrations(
+        self, workspace_id, intent, trace, result
+    ) -> None:
+        if not intent.need_integrations:
+            return
+
+        node = trace.begin("integrations", "IntegrationManager")
+        try:
+            caps: list[str] = []
+
+            if intent.need_docker:
+                summary = await self._query_integration(
+                    workspace_id, "docker", "containers"
+                )
+                result.docker_summary = summary
+                if summary:
+                    caps.append("docker")
+
+            if intent.need_weather:
+                summary = await self._query_integration(
+                    workspace_id, "weather", "clima"
+                )
+                result.weather_summary = summary
+                if summary:
+                    caps.append("weather")
+
+            if intent.need_calendar:
+                summary = await self._query_integration(
+                    workspace_id, "calendar", "agenda"
+                )
+                result.calendar_summary = summary
+                if summary:
+                    caps.append("calendar")
+
+            if intent.need_email:
+                summary = await self._query_integration(
+                    workspace_id, "email", "e-mails"
+                )
+                result.email_summary = summary
+                if summary:
+                    caps.append("email")
+
+            result.capabilities_used.extend(caps)
+            trace.complete(node, ", ".join(caps) if caps else "no data")
+        except Exception as exc:
+            trace.fail(node, str(exc))
+            logger.warning(
+                "capability_executor.integrations_failed", error=str(exc)
+            )
+
+    async def _query_integration(
+        self,
+        workspace_id: UUID,
+        slug_prefix: str,
+        label: str,
+    ) -> str:
+        """Check if an integration is configured and return its status."""
+        if self._integrations is None:
+            return f"IntegrationManager não disponível para consultar {label}."
+
+        try:
+            integrations = await self._integrations.list_integrations(
+                workspace_id
+            )
+            matches = [
+                i for i in integrations
+                if slug_prefix in i.slug.lower()
+                or slug_prefix in i.name.lower()
+            ]
+        except Exception as exc:
+            logger.warning(
+                "capability_executor.integration_query_failed",
+                slug=slug_prefix,
+                error=str(exc),
+            )
+            return ""
+
+        if not matches:
+            return (
+                f"Integração '{label}' não está configurada neste workspace. "
+                "Acesse Configurações → Integrações para conectar."
+            )
+
+        active = [i for i in matches if i.status.value == "active"]
+        if not active:
+            statuses = ", ".join(
+                f"{i.name} ({i.status.value})" for i in matches
+            )
+            return (
+                f"Integração '{label}' está configurada mas inativa: "
+                f"{statuses}."
+            )
+
+        names = ", ".join(i.name for i in active)
+        health = ", ".join(i.health.value for i in active)
+        return (
+            f"Integração '{label}' ativa: {names}. "
+            f"Health: {health}. "
+            "Os dados mais recentes estão disponíveis na base de conhecimento."
+        )
+
+    # ------------------------------------------------------------------ #
+    # Mission                                                              #
+    # ------------------------------------------------------------------ #
+
+    async def _run_mission(
+        self, message, workspace_id, decision, intent, trace,
+        requires_approval, conversation_id, result,
+    ) -> None:
+        need = decision.need_mission or intent.need_mission
+        if not need or self._mission is None:
+            reason = (
+                "not needed" if not need else "engine unavailable"
+            )
+            trace.skip("create_mission", "MissionEngine", reason)
+            return
+
+        node = trace.begin("create_mission", "MissionEngine")
+        try:
+            from models.mission import MissionTrigger
+            mission = await self._mission.create(
+                workspace_id=workspace_id,
+                intent=message,
+                trigger=MissionTrigger.MANUAL,
+                requires_approval=requires_approval,
+                conversation_id=conversation_id,
+            )
+            result.missions_created.append(str(mission.id))
+            result.capabilities_used.append("mission")
+            trace.complete(node, f"mission {str(mission.id)[:8]}…")
+        except Exception as exc:
+            trace.fail(node, str(exc))
+            logger.warning(
+                "capability_executor.mission_failed", error=str(exc)
+            )
