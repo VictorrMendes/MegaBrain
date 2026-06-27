@@ -14,6 +14,8 @@ from kernel.events.bus import EventBus
 async def fake_publish(self, *args, **kwargs):
     pass
 EventBus.publish_event = fake_publish
+EventBus.publish_infra_event = fake_publish
+EventBus.publish = fake_publish
 
 async def main():
     try:
