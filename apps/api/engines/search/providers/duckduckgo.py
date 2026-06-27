@@ -1,22 +1,20 @@
-"""DuckDuckGo search provider using the duckduckgo-search package.
+"""DuckDuckGo search provider using direct HTML parsing.
 
-Replaces the broken Instant Answer API endpoint with real web results via
-DDGS (duckduckgo_search).  No API key required.
+Replaces the broken duckduckgo-search package with real web results via
+direct async httpx calls. No API key required.
 
 Provider slug: duckduckgo
 """
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
+import httpx
+from bs4 import BeautifulSoup
 
 from engines.search.base import SearchProvider, SearchRegistry, SearchResult
 from kernel.logger import get_logger
 
 logger = get_logger(__name__)
-
-_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ddgs")
-
 
 def _domain(url: str) -> str:
     try:
@@ -24,7 +22,6 @@ def _domain(url: str) -> str:
         return urlparse(url).netloc.removeprefix("www.")
     except Exception:
         return ""
-
 
 def _dedup(results: list[SearchResult]) -> list[SearchResult]:
     """Remove duplicate URLs, keep the first occurrence."""
@@ -37,12 +34,11 @@ def _dedup(results: list[SearchResult]) -> list[SearchResult]:
             out.append(r)
     return out
 
-
 @SearchRegistry.register
 class DuckDuckGoProvider(SearchProvider):
     slug = "duckduckgo"
     name = "DuckDuckGo"
-    description = "Real web search via DuckDuckGo — no API key required"
+    description = "Real web search via DuckDuckGo HTML scraping — no API key required"
     requires_api_key = False
     supports_news = True
 
@@ -52,7 +48,7 @@ class DuckDuckGoProvider(SearchProvider):
         """Return real organic web results for query."""
         try:
             results = await asyncio.wait_for(
-                self._run_search(query, limit),
+                self._scrape_html(query, limit, is_news=False),
                 timeout=12.0,
             )
         except asyncio.TimeoutError:
@@ -73,7 +69,7 @@ class DuckDuckGoProvider(SearchProvider):
     ) -> list[SearchResult]:
         try:
             results = await asyncio.wait_for(
-                self._run_news(query, limit),
+                self._scrape_html(query, limit, is_news=True),
                 timeout=12.0,
             )
         except asyncio.TimeoutError:
@@ -88,52 +84,55 @@ class DuckDuckGoProvider(SearchProvider):
         return deduped[:limit]
 
     # ------------------------------------------------------------------
-    # Sync helpers (DDGS is synchronous; run in thread pool)
+    # Async Web Scraper
     # ------------------------------------------------------------------
 
-    async def _run_search(
-        self, query: str, limit: int
-    ) -> list[SearchResult]:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _executor, self._sync_search, query, limit
-        )
-
-    async def _run_news(
-        self, query: str, limit: int
-    ) -> list[SearchResult]:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            _executor, self._sync_news, query, limit
-        )
-
-    def _sync_search(self, query: str, limit: int) -> list[SearchResult]:
-        from duckduckgo_search import DDGS  # type: ignore[import]
+    async def _scrape_html(self, query: str, limit: int, is_news: bool) -> list[SearchResult]:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        }
+        
+        # DuckDuckGo HTML endpoint
+        url = "https://html.duckduckgo.com/html/"
+        data = {"q": query}
+        
+        # Note: 'is_news' would normally hit a different endpoint or use advanced params in DDG,
+        # but for the HTML endpoint we will just append 'news' to the query if not already there,
+        # or rely on normal search if DDG doesn't offer a separate HTML news endpoint easily.
+        if is_news and "news" not in query.lower():
+            data["q"] = f"{query} news"
 
         results: list[SearchResult] = []
-        with DDGS() as ddgs:
-            for r in ddgs.text(query, max_results=limit):
-                results.append(SearchResult(
-                    title=r.get("title", "")[:120],
-                    url=r.get("href", ""),
-                    snippet=r.get("body", "")[:400],
-                    source=_domain(r.get("href", "")),
-                    score=1.0,
-                ))
-        return results
-
-    def _sync_news(self, query: str, limit: int) -> list[SearchResult]:
-        from duckduckgo_search import DDGS  # type: ignore[import]
-
-        results: list[SearchResult] = []
-        with DDGS() as ddgs:
-            for r in ddgs.news(query, max_results=limit):
-                results.append(SearchResult(
-                    title=r.get("title", "")[:120],
-                    url=r.get("url", ""),
-                    snippet=r.get("body", "")[:400],
-                    source=_domain(r.get("url", "")),
-                    published_at=r.get("date"),
-                    score=1.0,
-                ))
+        
+        async with httpx.AsyncClient(http2=True, timeout=10.0) as client:
+            res = await client.post(url, headers=headers, data=data)
+            res.raise_for_status()
+            
+            soup = BeautifulSoup(res.text, "html.parser")
+            
+            for a in soup.find_all("a", class_="result__url"):
+                href = a.get("href", "")
+                if not href:
+                    continue
+                
+                title_elem = a.find_previous("h2", class_="result__title")
+                snippet_elem = a.find_next("a", class_="result__snippet")
+                
+                title = title_elem.text.strip() if title_elem else ""
+                snippet = snippet_elem.text.strip() if snippet_elem else ""
+                
+                if href and title:
+                    results.append(SearchResult(
+                        title=title[:120],
+                        url=href,
+                        snippet=snippet[:400],
+                        source=_domain(href),
+                        score=1.0,
+                    ))
+                
+                if len(results) >= limit + 2:  # fetch a few extra for dedup
+                    break
+                    
         return results
