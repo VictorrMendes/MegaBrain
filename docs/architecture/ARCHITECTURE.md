@@ -1,4 +1,4 @@
-# PAIOS — Architecture Reference
+# Khonshu — Architecture Reference
 
 **Status:** Living Document  
 **Version:** 2.1  
@@ -8,11 +8,11 @@
 
 ## 0. Philosophy
 
-> **PAIOS is a Cognitive Operating System. The LLM is a replaceable component.**
+> **Khonshu is a Cognitive Operating System. The LLM is a replaceable component.**
 
 This is the most important sentence in this document. Every architectural decision flows from it.
 
-PAIOS is not a chatbot. It is not an agent framework. It is not a RAG pipeline.
+Khonshu is not a chatbot. It is not an agent framework. It is not a RAG pipeline.
 
 It is an operating system that:
 
@@ -216,7 +216,7 @@ See Section 6 and ADR-001.
 
 ### 4.1 Domain Events vs Infrastructure Events
 
-This is one of the most important structural boundaries in PAIOS. Conflating the two creates coupling between business logic and infrastructure — a violation of the dependency rule that makes the system brittle over time.
+This is one of the most important structural boundaries in Khonshu. Conflating the two creates coupling between business logic and infrastructure — a violation of the dependency rule that makes the system brittle over time.
 
 **Domain Events** represent something meaningful that happened in the business domain. They are immutable facts. Other domain components may react to them. They are always named in past tense.
 
@@ -250,7 +250,7 @@ See ADR-002 for the full rationale.
 
 ### 4.2 Event Envelope
 
-Every event in PAIOS — domain or infrastructure — uses the same envelope:
+Every event in Khonshu — domain or infrastructure — uses the same envelope:
 
 ```python
 @dataclass
@@ -299,7 +299,7 @@ class KhonshuEvent:
 
 ## 5. Capability Registry
 
-The CapabilityRegistry is the single source of truth about what PAIOS can do.  
+The CapabilityRegistry is the single source of truth about what Khonshu can do.  
 Plugins do not expose methods. They expose **capabilities** — semantic descriptions of what they can accomplish.
 
 This distinction matters for the Planner: it must ask "who can manage containers?" not "does `docker.restart()` exist?". The former survives plugin refactoring; the latter breaks on every rename.
@@ -386,7 +386,7 @@ See ADR-004 for the full rationale for semantic capabilities over method catalog
 
 ## 6. Mission System
 
-The Mission System is the heart of PAIOS. It is what separates a cognitive OS from a chatbot.
+The Mission System is the heart of Khonshu. It is what separates a cognitive OS from a chatbot.
 
 ### 6.1 Separation: Mission / ExecutionPlan / MissionStep
 
@@ -610,7 +610,7 @@ Template variables (`{{ }}`) are resolved at step execution time, not at plan cr
 
 ## 9. Scheduler
 
-The Scheduler makes PAIOS proactive. It creates Missions without user interaction.
+The Scheduler makes Khonshu proactive. It creates Missions without user interaction.
 
 Three trigger types with distinct semantics:
 
@@ -716,7 +716,7 @@ See ADR-005 for the full rationale.
 
 ## 11. Memory Engine
 
-The Memory Engine stores what PAIOS remembers about the user and context.
+The Memory Engine stores what Khonshu remembers about the user and context.
 
 ### 11.1 Memory Types
 
