@@ -82,6 +82,20 @@ _MISSION_PATTERNS = [
     r"\bexecut\w* (?:uma |a )?tarefa\b",
 ]
 
+_CHECKUP_PATTERNS = [
+    r"\bcheck.?up\b",
+    r"\bstatus do sistema\b",
+    r"\bdiagn[oó]stico\b",
+    r"\bdiagnostico\b",
+    r"\btudo funcionando\b",
+    r"\bstatus geral\b",
+    r"\bsaúde do sistema\b",
+    r"\bsaude do sistema\b",
+    r"\bcomo está o sistema\b",
+    r"\bcomo esta o sistema\b",
+    r"\bsistema est[áa] ok\b",
+]
+
 
 def _any_match(text: str, patterns: list[str]) -> bool:
     return any(re.search(p, text, re.IGNORECASE) for p in patterns)
@@ -98,6 +112,7 @@ class IntentFlags:
     need_email: bool = False
     need_memory: bool = False
     need_mission: bool = False
+    need_checkup: bool = False
     detected: list[str] = field(default_factory=list)
 
     @property
@@ -147,5 +162,9 @@ class IntentRouter:
         if _any_match(lower, _MISSION_PATTERNS):
             flags.need_mission = True
             flags.detected.append("mission")
+
+        if _any_match(lower, _CHECKUP_PATTERNS):
+            flags.need_checkup = True
+            flags.detected.append("checkup")
 
         return flags

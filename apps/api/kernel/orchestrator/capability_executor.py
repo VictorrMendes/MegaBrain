@@ -1,4 +1,5 @@
-"""CapabilityExecutor — centralized execution layer between Decision and Generate.
+"""CapabilityExecutor — centralized execution layer between Decision
+and Generate.
 
 Implements ADR-011: Tool-First Architecture.
 
@@ -34,10 +35,12 @@ class CapabilityResult:
     search_summary: str = ""
     search_count: int = 0
     search_query: str = ""
+    search_error_type: str = ""
     docker_summary: str = ""
     calendar_summary: str = ""
     weather_summary: str = ""
     email_summary: str = ""
+    checkup_summary: str = ""
     missions_created: list[str] = field(default_factory=list)
     capabilities_used: list[str] = field(default_factory=list)
     internet_sources: int = 0
@@ -45,10 +48,12 @@ class CapabilityResult:
     def has_tool_output(self) -> bool:
         return bool(
             self.search_summary
+            or self.search_error_type
             or self.docker_summary
             or self.calendar_summary
             or self.weather_summary
             or self.email_summary
+            or self.checkup_summary
         )
 
     def to_prompt_sections(self) -> list[str]:
@@ -59,7 +64,7 @@ class CapabilityResult:
         """
         sections: list[str] = []
 
-        if self.search_summary:
+        if self.search_count > 0 and self.search_summary:
             sections.append(
                 f"## Resultados de Pesquisa Web\n"
                 f"(Obtidos pelo Kernel agora para: '{self.search_query}')\n\n"
@@ -68,6 +73,33 @@ class CapabilityResult:
                 "Não afirme que não possui acesso à internet — "
                 "a pesquisa já foi executada."
             )
+        elif self.search_error_type == "no_results":
+            sections.append(
+                f"## Pesquisa Web\n"
+                f"(Busca por '{self.search_query}'"
+                " não retornou resultados)\n\n"
+                "A busca foi executada mas não encontrou fontes externas "
+                "sobre este tópico. Use seu conhecimento de treinamento "
+                "e informe que não foram encontrados resultados atualizados."
+            )
+        elif self.search_error_type in (
+            "timeout", "connection_error", "rate_limit", "provider_error"
+        ):
+            _label = {
+                "timeout": "timeout na requisição",
+                "connection_error": "erro de conexão",
+                "rate_limit": "limite de requisições atingido",
+                "provider_error": "erro no provedor de busca",
+            }.get(self.search_error_type, "falha técnica")
+            sections.append(
+                f"## Pesquisa Web\n"
+                f"(Busca por '{self.search_query}' falhou: {_label})\n\n"
+                "A busca externa não foi concluída. Responda com seu "
+                "conhecimento interno e mencione que não foi possível "
+                "confirmar com fontes externas atuais."
+            )
+        elif self.search_summary:
+            sections.append(f"## Pesquisa Web\n{self.search_summary}")
 
         if self.docker_summary:
             sections.append(
@@ -87,6 +119,11 @@ class CapabilityResult:
         if self.email_summary:
             sections.append(
                 f"## E-mails\n{self.email_summary}"
+            )
+
+        if self.checkup_summary:
+            sections.append(
+                f"## Status do Sistema\n{self.checkup_summary}"
             )
 
         return sections
@@ -131,6 +168,7 @@ class CapabilityExecutor:
             message, workspace_id, decision, intent, trace,
             requires_approval, conversation_id, result,
         )
+        await self._run_checkup(workspace_id, intent, trace, result)
 
         return result
 
@@ -156,18 +194,39 @@ class CapabilityExecutor:
         node = trace.begin("search", "SearchEngine")
         try:
             data = await self._search.search(message, workspace_id)
-            result.search_summary = data.get("summary", "")
-            result.search_count = data.get("count", 0)
+            error_type = data.get("error_type") or ""
+            provider = data.get("provider", "unknown")
             result.search_query = message
-            result.internet_sources = result.search_count
-            result.capabilities_used.append("web_search")
-            trace.complete(node, f"{result.search_count} results")
+
+            if error_type:
+                result.search_error_type = error_type
+                trace.fail(
+                    node,
+                    f"error_type={error_type} provider={provider}",
+                )
+                logger.warning(
+                    "capability_executor.search_error",
+                    error_type=error_type,
+                    provider=provider,
+                    query=message,
+                )
+            else:
+                result.search_summary = data.get("summary", "")
+                result.search_count = data.get("count", 0)
+                result.internet_sources = result.search_count
+                result.capabilities_used.append("web_search")
+                trace.complete(
+                    node,
+                    f"count={result.search_count} provider={provider}",
+                )
         except Exception as exc:
             trace.fail(node, str(exc))
-            logger.warning("capability_executor.search_failed", error=str(exc))
+            logger.warning(
+                "capability_executor.search_failed", error=str(exc)
+            )
+            result.search_error_type = "error"
             result.search_summary = (
-                "A pesquisa foi executada mas encontrou um erro: "
-                f"{exc}. Nenhum resultado disponível."
+                f"A pesquisa encontrou um erro técnico: {exc}."
             )
 
     # ------------------------------------------------------------------ #
@@ -308,4 +367,73 @@ class CapabilityExecutor:
             trace.fail(node, str(exc))
             logger.warning(
                 "capability_executor.mission_failed", error=str(exc)
+            )
+
+    # ------------------------------------------------------------------ #
+    # System check-up                                                      #
+    # ------------------------------------------------------------------ #
+
+    async def _run_checkup(
+        self, workspace_id, intent, trace, result
+    ) -> None:
+        if not intent.need_checkup:
+            return
+
+        node = trace.begin("checkup", "RuntimeCheckup")
+        try:
+            lines: list[str] = ["**Status do Sistema Khonshu**\n"]
+
+            lines.append("### Engines")
+            lines.append(
+                f"- SearchEngine: "
+                f"{'✓ disponível' if self._search else '✗ não inicializado'}"
+            )
+            lines.append(
+                f"- MissionEngine: "
+                f"{'✓ disponível' if self._mission else '✗ não inicializado'}"
+            )
+            im_ok = (
+                "✓ disponível" if self._integrations
+                else "✗ não inicializado"
+            )
+            lines.append(f"- IntegrationManager: {im_ok}")
+
+            if self._integrations:
+                try:
+                    integrations = (
+                        await self._integrations.list_integrations(
+                            workspace_id
+                        )
+                    )
+                    lines.append("\n### Integrações")
+                    if integrations:
+                        for integ in integrations:
+                            icon = (
+                                "✓" if integ.status.value == "active"
+                                else "✗"
+                            )
+                            health = getattr(integ, "health", None)
+                            health_val = (
+                                health.value if health else "unknown"
+                            )
+                            lines.append(
+                                f"- {icon} {integ.name}: "
+                                f"status={integ.status.value}, "
+                                f"health={health_val}"
+                            )
+                    else:
+                        lines.append(
+                            "- Nenhuma integração configurada "
+                            "neste workspace."
+                        )
+                except Exception as exc:
+                    lines.append(f"- Erro ao consultar integrações: {exc}")
+
+            result.checkup_summary = "\n".join(lines)
+            result.capabilities_used.append("checkup")
+            trace.complete(node, "system status built")
+        except Exception as exc:
+            trace.fail(node, str(exc))
+            logger.warning(
+                "capability_executor.checkup_failed", error=str(exc)
             )

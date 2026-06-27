@@ -3,13 +3,13 @@
 ADR-011: Tool-First Architecture.
 
 Pipeline:
-  1. Build base context    (ContextBuilder — memory, knowledge, RAG, capabilities)
-  2. Route intent          (IntentRouter — deterministic keyword analysis)
-  3. Decide routing        (DecisionEngine LLM — merges with IntentRouter flags)
-  4. Execute capabilities  (CapabilityExecutor — search, integrations, missions)
-  5. Generate response     (LLMProvider — only interprets Kernel outputs)
-  6. Validate response     (CapabilityValidator — reject hallucinated limitations)
-  7. Learn                 (LearningEngine)
+  1. Build base context  (ContextBuilder — memory, knowledge, RAG)
+  2. Route intent        (IntentRouter — deterministic keyword analysis)
+  3. Decide routing      (DecisionEngine LLM — merges IntentRouter flags)
+  4. Execute caps        (CapabilityExecutor — search, integrations, missions)
+  5. Generate response   (LLMProvider — only interprets Kernel outputs)
+  6. Validate response   (CapabilityValidator — reject hallucinated limits)
+  7. Learn               (LearningEngine)
 
 The LLM never calls tools directly. It receives data produced by the Kernel
 and synthesizes a response. The Kernel is the source of truth.
@@ -58,6 +58,27 @@ _INVALID_DOCKER_PHRASES = [
     r"não consigo acessar containers",
     r"não tenho acesso ao docker",
     r"não posso monitorar containers",
+]
+_INVALID_CALENDAR_PHRASES = [
+    r"não tenho (?:acesso (?:à|a)|integração de) (?:minha )?agenda",
+    r"não consigo acessar (?:o )?calendário",
+    r"não possuo calendário",
+    r"sem acesso (?:ao )?calendário",
+    r"não tenho integração de calendário",
+]
+_INVALID_WEATHER_PHRASES = [
+    r"não consigo verificar (?:o )?clima",
+    r"não tenho (?:acesso|dados) (?:a(?:o)?|sobre) (?:o )?clima",
+    r"não possuo dados (?:de|do|sobre) clima",
+    r"sem (?:acesso a(?:o)?|dados de) (?:o )?clima",
+]
+# Always invalid — regardless of which tool ran
+_INVALID_GENERAL_PHRASES = [
+    r"sou apenas (?:um )?(?:modelo|assistente|chatbot|ia) de linguagem",
+    r"sou apenas um sistema local",
+    r"não possuo (?:essa |esta )?capacidade",
+    r"sou incapaz de",
+    r"não tenho (?:essa |esta )?capacidade",
 ]
 
 
@@ -207,7 +228,9 @@ class CognitiveOrchestrator:
             self._metrics.record_knowledge_hit(ctx.knowledge_count)
         return ctx
 
-    def _route_intent(self, message: str, trace: ReasoningTrace) -> IntentFlags:
+    def _route_intent(
+        self, message: str, trace: ReasoningTrace
+    ) -> IntentFlags:
         node = trace.begin("intent_route", "IntentRouter")
         intent = self._intent_router.analyze(message)
         trace.complete(node, intent.summary() or "none")
@@ -281,33 +304,63 @@ class CognitiveOrchestrator:
         intent: IntentFlags,
         trace: ReasoningTrace,
     ) -> str:
-        """Reject responses that claim unavailable limitations.
+        """Reject responses that falsely claim capability limitations.
 
-        If search was executed and the response says "não tenho acesso à
-        internet", replace the response with the actual search data.
+        Checks: search denial when search ran, docker denial when docker
+        data was provided, calendar/weather denials, and always-invalid
+        general defensive phrases when any tool output exists.
         """
         invalid = False
+        violated_cap = "unknown"
 
-        if cap_result.search_summary:
+        # Search: invalid if internet WAS accessible (real results or no_results)
+        search_accessible = (
+            bool(cap_result.search_summary and cap_result.search_count > 0)
+            or cap_result.search_error_type == "no_results"
+        )
+        if search_accessible:
             for pattern in _INVALID_SEARCH_PHRASES:
                 if re.search(pattern, response, re.IGNORECASE):
                     invalid = True
+                    violated_cap = "search"
                     break
 
-        if cap_result.docker_summary:
+        if cap_result.docker_summary and not invalid:
             for pattern in _INVALID_DOCKER_PHRASES:
                 if re.search(pattern, response, re.IGNORECASE):
                     invalid = True
+                    violated_cap = "docker"
+                    break
+
+        if cap_result.calendar_summary and not invalid:
+            for pattern in _INVALID_CALENDAR_PHRASES:
+                if re.search(pattern, response, re.IGNORECASE):
+                    invalid = True
+                    violated_cap = "calendar"
+                    break
+
+        if cap_result.weather_summary and not invalid:
+            for pattern in _INVALID_WEATHER_PHRASES:
+                if re.search(pattern, response, re.IGNORECASE):
+                    invalid = True
+                    violated_cap = "weather"
+                    break
+
+        if cap_result.has_tool_output() and not invalid:
+            for pattern in _INVALID_GENERAL_PHRASES:
+                if re.search(pattern, response, re.IGNORECASE):
+                    invalid = True
+                    violated_cap = "general"
                     break
 
         if invalid:
             node = trace.begin("validate", "CapabilityValidator")
-            trace.fail(node, "response denied available capability — corrected")
+            _msg = f"denied {violated_cap} capability — corrected"
+            trace.fail(node, _msg)
             logger.warning(
                 "orchestrator.invalid_response_corrected",
-                search_available=bool(cap_result.search_summary),
+                violated_cap=violated_cap,
             )
-            # Build a corrected response from available tool outputs
             sections = cap_result.to_prompt_sections()
             if sections:
                 return (

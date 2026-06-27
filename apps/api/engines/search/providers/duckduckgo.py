@@ -55,12 +55,12 @@ class DuckDuckGoProvider(SearchProvider):
                 self._run_search(query, limit),
                 timeout=12.0,
             )
-        except TimeoutError:
+        except asyncio.TimeoutError:
             logger.warning("duckduckgo.search_timeout", query=query)
-            return []
+            raise
         except Exception as exc:
             logger.warning("duckduckgo.search_failed", error=str(exc))
-            return []
+            raise
 
         deduped = _dedup(results)
         logger.info(
@@ -76,12 +76,12 @@ class DuckDuckGoProvider(SearchProvider):
                 self._run_news(query, limit),
                 timeout=12.0,
             )
-        except TimeoutError:
+        except asyncio.TimeoutError:
             logger.warning("duckduckgo.news_timeout", query=query)
-            return []
+            raise
         except Exception as exc:
             logger.warning("duckduckgo.news_failed", error=str(exc))
-            return []
+            raise
 
         deduped = _dedup(results)
         logger.info("duckduckgo.news_done", query=query, results=len(deduped))

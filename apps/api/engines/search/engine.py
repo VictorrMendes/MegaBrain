@@ -12,6 +12,7 @@ The SearchEngine never decides whether to search; that is the Planner's job.
 """
 from __future__ import annotations
 
+import asyncio
 from uuid import UUID
 
 from engines.search.base import SearchProvider, SearchRegistry
@@ -52,12 +53,66 @@ class SearchEngine:
         """Search and optionally store results as temporary knowledge."""
         provider = self._get_provider(provider_slug)
         if provider is None:
-            return {"error": "No search provider available", "results": []}
+            return {
+                "query": query,
+                "provider": "none",
+                "count": 0,
+                "results": [],
+                "summary": "",
+                "error": "No search provider available",
+                "error_type": "no_provider",
+            }
 
-        results = await provider.search(query, limit=limit)
+        try:
+            results = await provider.search(query, limit=limit)
+        except asyncio.TimeoutError:
+            logger.warning("search_engine.timeout", query=query)
+            return {
+                "query": query,
+                "provider": provider.slug,
+                "count": 0,
+                "results": [],
+                "summary": "",
+                "error": "Search timed out after 12s",
+                "error_type": "timeout",
+            }
+        except Exception as exc:
+            err = str(exc).lower()
+            if "rate" in err:
+                error_type = "rate_limit"
+            elif any(k in err for k in ("connection", "network", "connect")):
+                error_type = "connection_error"
+            else:
+                error_type = "provider_error"
+            logger.warning(
+                "search_engine.provider_error",
+                query=query,
+                error_type=error_type,
+                error=str(exc),
+            )
+            return {
+                "query": query,
+                "provider": provider.slug,
+                "count": 0,
+                "results": [],
+                "summary": "",
+                "error": str(exc),
+                "error_type": error_type,
+            }
+
+        if not results:
+            return {
+                "query": query,
+                "provider": provider.slug,
+                "count": 0,
+                "results": [],
+                "summary": "",
+                "error": None,
+                "error_type": "no_results",
+            }
 
         # Store as temporary knowledge facts
-        if self._knowledge and workspace_id and results:
+        if self._knowledge and workspace_id:
             await self._store_as_knowledge(
                 workspace_id, query, results, provider.slug
             )
@@ -74,10 +129,12 @@ class SearchEngine:
 
         return {
             "query": query,
-            "provider": provider.slug if provider else "none",
+            "provider": provider.slug,
             "count": len(results),
             "results": serialised,
             "summary": self._summarise(results),
+            "error": None,
+            "error_type": None,
         }
 
     async def news(
