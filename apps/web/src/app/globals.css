@@ -201,8 +201,6 @@ body {
    Typography Utilities
    ═══════════════════════════════════════════════════════════════ */
 
-.font-mono { @apply font-mono; }
-
 .text-label {
   font-size: 10px;
   font-weight: var(--weight-semibold);
