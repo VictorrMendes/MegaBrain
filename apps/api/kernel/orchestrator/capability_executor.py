@@ -244,9 +244,24 @@ class CapabilityExecutor:
             caps: list[str] = []
 
             if intent.need_docker:
-                summary = await self._query_integration(
-                    workspace_id, "docker", "containers"
-                )
+                try:
+                    data = await self._integrations.execute_capability(
+                        workspace_id, "docker", "docker.list_containers", {}
+                    )
+                    containers = data.get("containers", [])
+                    if not containers:
+                        summary = "Nenhum container rodando no momento."
+                    else:
+                        lines = ["Containers atuais no servidor:"]
+                        for c in containers:
+                            name = c.get("Names", ["?"])[0].lstrip("/")
+                            state = c.get("State", "?")
+                            status = c.get("Status", "?")
+                            lines.append(f"- **{name}** ({state}): {status}")
+                        summary = "\n".join(lines)
+                except Exception as exc:
+                    summary = f"Erro ao consultar containers Docker: {exc}"
+                    
                 result.docker_summary = summary
                 if summary:
                     caps.append("docker")
