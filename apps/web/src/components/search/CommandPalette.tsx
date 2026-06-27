@@ -6,6 +6,7 @@ import { api, type SearchResult } from "@/lib/api";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { cn } from "@/lib/cn";
 import { Spinner } from "@/components/ui";
+import { useUIStore, type OverlayId } from "@/store/useUIStore";
 import {
   BookOpenIcon,
   BrainIcon,
@@ -17,6 +18,8 @@ import {
   SearchIcon,
   TargetIcon,
   XIcon,
+  ZapIcon,
+  TerminalSquareIcon
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────
@@ -33,6 +36,7 @@ const TYPE_ICON: Record<string, React.ReactNode> = {
   observation: <LightbulbIcon size={13} className="text-status-warning" />,
   entity:      <NetworkIcon   size={13} className="text-accent" />,
   artifact:    <PackageIcon   size={13} className="text-content-secondary" />,
+  os_command:  <TerminalSquareIcon size={13} className="text-accent" />
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -42,13 +46,14 @@ const TYPE_LABEL: Record<string, string> = {
   observation: "observação",
   entity:      "entidade",
   artifact:    "artifact",
+  os_command:  "system action"
 };
 
 const QUICK_NAV = [
-  { label: "Missões",      href: "/missions",  icon: <TargetIcon    size={11} /> },
-  { label: "Memória",      href: "/memory",    icon: <BrainIcon     size={11} /> },
-  { label: "Conhecimento", href: "/knowledge", icon: <BookOpenIcon  size={11} /> },
-  { label: "Artifacts",    href: "/artifacts", icon: <PackageIcon   size={11} /> },
+  { label: "Missões",      href: "missions",  icon: <TargetIcon    size={11} /> },
+  { label: "Memória",      href: "memory",    icon: <BrainIcon     size={11} /> },
+  { label: "Conhecimento", href: "knowledge", icon: <BookOpenIcon  size={11} /> },
+  { label: "Artifacts",    href: "artifacts", icon: <PackageIcon   size={11} /> },
 ];
 
 const TYPE_FILTERS = [
@@ -97,6 +102,8 @@ interface Props {
 export function CommandPalette({ open, onClose }: Props) {
   const router = useRouter();
   const { current: workspace } = useWorkspace();
+  const { pushOverlay, setCognitiveState } = useUIStore();
+  
   const [query,      setQuery]      = useState("");
   const [results,    setResults]    = useState<SearchResult[]>([]);
   const [loading,    setLoading]    = useState(false);
@@ -105,6 +112,18 @@ export function CommandPalette({ open, onClose }: Props) {
   const [history,    setHistory]    = useState<string[]>([]);
   const inputRef    = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isOsCommandMode = query.startsWith(">");
+
+  const OS_COMMANDS = [
+    { id: "memory", title: "Open Memory Overlay", href: "memory" },
+    { id: "knowledge", title: "Open Knowledge Overlay", href: "knowledge" },
+    { id: "dashboard", title: "Open OS Dashboard", href: "dashboard" },
+    { id: "missions", title: "Open Missions Overlay", href: "missions" },
+    { id: "think", title: "Force Cognitive State: Thinking", action: () => setCognitiveState("thinking") },
+    { id: "idle", title: "Force Cognitive State: Idle", action: () => setCognitiveState("idle") },
+    { id: "summarize", title: "Summarize Workspace", action: () => setCognitiveState("generating") },
+  ];
 
   useEffect(() => {
     if (open) {
@@ -121,6 +140,22 @@ export function CommandPalette({ open, onClose }: Props) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!query.trim()) { setResults([]); return; }
 
+    if (isOsCommandMode) {
+      const q = query.slice(1).trim().toLowerCase();
+      const filtered = OS_COMMANDS.filter(c => c.title.toLowerCase().includes(q));
+      setResults(filtered.map(c => ({
+        id: c.id,
+        type: "os_command",
+        title: c.title,
+        excerpt: "Action OS",
+        href: c.href ?? "action",
+        score: 1.0,
+        workspace_id: workspace?.id ?? "global",
+      })));
+      setLoading(false);
+      return;
+    }
+
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
       try {
@@ -136,11 +171,21 @@ export function CommandPalette({ open, onClose }: Props) {
   }, [query, workspace?.id]);
 
   function navigate(href: string, searchQuery?: string) {
-    if (searchQuery) {
+    if (searchQuery && !isOsCommandMode) {
       pushHistory(searchQuery);
       setHistory(loadHistory());
     }
-    router.push(href);
+    
+    // Execute action OS commands
+    if (isOsCommandMode && href === "action") {
+      const activeCmd = OS_COMMANDS.find(c => c.id === results[cursor]?.id);
+      if (activeCmd && activeCmd.action) activeCmd.action();
+      onClose();
+      return;
+    }
+
+    // Default to pushing overlay
+    pushOverlay(href.replace('/', '') as OverlayId);
     onClose();
   }
 
@@ -158,7 +203,7 @@ export function CommandPalette({ open, onClose }: Props) {
     }
   }
 
-  const filteredResults = typeFilter === "all"
+  const filteredResults = typeFilter === "all" || isOsCommandMode
     ? results
     : results.filter((r) => r.type === typeFilter || (typeFilter === "fact" && (r.type === "fact" || r.type === "observation")));
 
@@ -349,7 +394,7 @@ export function CommandPalette({ open, onClose }: Props) {
             {/* Create shortcuts */}
             <div className="mt-3 flex gap-2">
               <button
-                onClick={() => navigate("/missions")}
+                onClick={() => navigate("missions")}
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs",
                   "border-accent-subtle bg-accent-dim text-accent",
@@ -359,7 +404,7 @@ export function CommandPalette({ open, onClose }: Props) {
                 <PlusIcon size={11} /> Nova missão
               </button>
               <button
-                onClick={() => navigate("/memory")}
+                onClick={() => navigate("memory")}
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs",
                   "border-[var(--border-subtle)] bg-[var(--surface-subtle)]",

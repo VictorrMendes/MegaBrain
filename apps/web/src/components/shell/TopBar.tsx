@@ -13,7 +13,9 @@ import {
   ChevronDownIcon,
   CommandIcon,
   LayersIcon,
+  BrainCircuitIcon
 } from "lucide-react";
+import { useUIStore } from "@/store/useUIStore";
 
 // ─────────────────────────────────────────────────────────────
 // Component
@@ -27,6 +29,7 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
   const { current: workspace, workspaces, setCurrent } = useWorkspace();
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
   const [notifOpen,  setNotifOpen]  = useState(false);
+  const { cognitiveState } = useUIStore();
 
   return (
     <header
@@ -161,12 +164,17 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
           <CommandIcon size={15} />
         </button>
         {/* System status pill */}
-        <StatusPill
-          status="online"
-          label="online"
-          size="sm"
-          className="hidden sm:flex opacity-60 hover:opacity-100 transition-opacity"
-        />
+        <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-md bg-[var(--surface-subtle)] border border-[var(--border-subtle)]">
+          <div className="relative flex items-center justify-center">
+            <BrainCircuitIcon size={12} className={cn("text-accent", cognitiveState !== "idle" && "animate-pulse")} />
+            {cognitiveState !== "idle" && (
+              <div className="absolute inset-0 rounded-full bg-accent/20 blur-sm animate-pulse"></div>
+            )}
+          </div>
+          <span className="text-[10px] font-semibold text-content-secondary uppercase tracking-widest">
+            {cognitiveState === "idle" ? "Online" : cognitiveState}
+          </span>
+        </div>
 
         {/* Separator */}
         <span className="h-4 w-px bg-[var(--border-subtle)]" />

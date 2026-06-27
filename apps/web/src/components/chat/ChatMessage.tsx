@@ -112,99 +112,38 @@ function LivePipeline({
   const pending = pendingStep(phase);
 
   return (
-    <div className="mb-3 overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-raised)]">
-      <div className="flex items-center gap-1.5 border-b border-[var(--border-subtle)] px-3 py-2">
-        <ZapIcon size={9} className="text-accent" />
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-content-muted">
-          Pipeline cognitivo
-        </span>
-        {phase && (
-          <span className="ml-auto flex items-center gap-1 text-[10px] text-accent">
-            <span className="h-1 w-1 rounded-full bg-accent animate-pulse" />
-            Processando
+    <div className="flex flex-col gap-4 py-3 pl-3 relative mb-2">
+      {/* Connecting line */}
+      <div className="absolute left-[15px] top-5 bottom-3 w-[2px] bg-accent/20 rounded-full" />
+      
+      {steps.map((s, i) => (
+        <div key={i} className="flex items-center gap-4 relative z-10 animate-fade-in-up" style={{ animationDelay: `${i * 0.1}s` }}>
+          <div className="h-2 w-2 rounded-full bg-accent/40 shadow-[0_0_10px_rgba(var(--accent-rgb),0.3)] ring-4 ring-[var(--surface-base)]" />
+          <span className="text-xs font-medium text-content-muted flex items-center gap-2">
+            {stepIcon(s.step)}
+            {stepLabel(s.step)}
           </span>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-0 divide-y divide-[var(--border-subtle)]">
-        {steps.map((s) => (
-          <StepRow key={s.step} step={s} />
-        ))}
-        {pending && (
-          <PendingRow step={pending} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StepRow({ step }: { step: LiveTraceStep }) {
-  const isSkipped = step.status === "skipped";
-  const isFailed  = step.status === "failed";
-
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-2.5 px-3 py-2 animate-fade-in",
-        isSkipped && "opacity-40",
-      )}
-    >
-      <div
-        className={cn(
-          "flex h-4 w-4 shrink-0 items-center justify-center rounded-full",
-          isFailed  && "bg-red-500/15 text-status-error",
-          isSkipped && "bg-[var(--surface-subtle)] text-content-muted",
-          !isFailed && !isSkipped && "bg-[var(--status-success-dim,rgba(34,197,94,0.12))] text-status-success",
-        )}
-      >
-        {isFailed  ? <XIcon size={7} strokeWidth={3} /> :
-         isSkipped ? <SkipForwardIcon size={7} /> :
-                     <CheckIcon size={7} strokeWidth={3} />}
-      </div>
-
-      <span className="flex items-center gap-1.5 text-[11px] text-content-muted flex-1 min-w-0">
-        <span className="shrink-0 text-content-muted opacity-60">
-          {stepIcon(step.step)}
-        </span>
-        <span
-          className={cn(
-            "truncate",
-            isSkipped ? "line-through" : "text-content-secondary",
+          {s.duration_ms != null && (
+            <span className="text-[10px] text-content-muted opacity-40 ml-2">
+              {s.duration_ms < 1000 ? `${Math.round(s.duration_ms)}ms` : `${(s.duration_ms / 1000).toFixed(1)}s`}
+            </span>
           )}
-        >
-          {stepLabel(step.step)}
-        </span>
-        {step.output && !isSkipped && (
-          <span className="shrink-0 text-[10px] text-content-muted opacity-70 truncate max-w-[120px]">
-            — {step.output}
+        </div>
+      ))}
+      
+      {pending && (
+        <div className="flex items-center gap-4 relative z-10 animate-fade-in-up">
+          <div className="relative flex items-center justify-center h-2 w-2 ring-4 ring-[var(--surface-base)]">
+            <div className="absolute inset-0 rounded-full bg-accent opacity-75 animate-ping" />
+            <div className="relative h-2 w-2 rounded-full bg-accent" />
+          </div>
+          <span className="text-xs font-semibold text-content-primary flex items-center gap-2 text-glow">
+            {stepIcon(pending)}
+            {stepLabel(pending)}
+            <span className="animate-pulse">...</span>
           </span>
-        )}
-      </span>
-
-      {step.duration_ms != null && !isSkipped && (
-        <span className="shrink-0 text-[10px] tabular-nums text-content-muted opacity-50">
-          {step.duration_ms < 1000
-            ? `${Math.round(step.duration_ms)}ms`
-            : `${(step.duration_ms / 1000).toFixed(1)}s`}
-        </span>
+        </div>
       )}
-    </div>
-  );
-}
-
-function PendingRow({ step }: { step: string }) {
-  return (
-    <div className="flex items-center gap-2.5 px-3 py-2">
-      <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent-dim">
-        <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-      </div>
-      <span className="flex items-center gap-1.5 text-[11px] flex-1">
-        <span className="shrink-0 text-accent opacity-70">
-          {stepIcon(step)}
-        </span>
-        <span className="font-medium text-content-primary">{stepLabel(step)}</span>
-        <span className="text-[10px] text-content-muted animate-pulse">…</span>
-      </span>
     </div>
   );
 }
@@ -220,7 +159,7 @@ function pendingStep(phase: StreamPhase): string | null {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Transparency chip (post-streaming)
+// Transparency chip (Context Layer Accordion)
 // ─────────────────────────────────────────────────────────────
 
 const RISK_COLOR: Record<string, string> = {
@@ -230,7 +169,7 @@ const RISK_COLOR: Record<string, string> = {
   critical: "text-status-error",
 };
 
-function TransparencyChip({
+function TransparencyAccordion({
   data,
   onShowTrace,
 }: {
@@ -242,83 +181,54 @@ function TransparencyChip({
   const totalCtx = data.memory_used + data.knowledge_used;
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-      {/* Confidence */}
-      <span
-        className={cn(
-          "inline-flex items-center gap-1 rounded-md px-2 py-1",
-          "border border-[var(--border-subtle)] bg-[var(--surface-raised)]",
-          "text-[10px] font-medium",
-          confPct >= 80
-            ? "text-status-success"
-            : confPct >= 60
-            ? "text-status-warning"
-            : "text-status-error",
-        )}
-        title="Confiança da resposta"
-      >
-        <SparklesIcon size={9} />
-        {confPct}%
-      </span>
-
-      {/* Risk */}
-      <span
-        className={cn(
-          "inline-flex items-center gap-1 rounded-md px-2 py-1",
-          "border border-[var(--border-subtle)] bg-[var(--surface-raised)]",
-          "text-[10px] font-medium capitalize",
-          riskCls,
-        )}
-        title="Nível de risco"
-      >
-        <TriangleAlertIcon size={9} />
-        {data.risk}
-      </span>
-
-      {/* Context used */}
-      {totalCtx > 0 && (
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 rounded-md px-2 py-1",
-            "border border-[var(--border-subtle)] bg-[var(--surface-raised)]",
-            "text-[10px] font-medium text-accent",
-          )}
-          title={`${data.memory_used} memórias, ${data.knowledge_used} fatos`}
-        >
-          <BrainIcon size={9} />
-          {totalCtx} ctx
+    <details className="mt-4 group/accordion cursor-pointer">
+      <summary className="list-none flex items-center gap-2 text-[11px] font-semibold tracking-wide text-content-muted hover:text-accent transition-colors select-none">
+        <span className="group-open/accordion:rotate-90 transition-transform duration-300">
+          ▶
         </span>
-      )}
-
-      {/* Internet */}
-      {data.internet_sources > 0 && (
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 rounded-md px-2 py-1",
-            "border border-[var(--border-subtle)] bg-[var(--surface-raised)]",
-            "text-[10px] font-medium text-blue-400",
-          )}
-          title="Fontes da internet"
-        >
-          <GlobeIcon size={9} />
-          {data.internet_sources} web
+        <span className="uppercase tracking-widest text-[10px]">Context Layer & Debug</span>
+        <span className="ml-2 px-1.5 py-0.5 rounded bg-[var(--surface-subtle)] text-[9px] text-content-secondary">
+          {totalCtx} fontes • Risco: {data.risk}
         </span>
-      )}
-
-      {/* Reasoning button */}
-      <button
-        onClick={onShowTrace}
-        className={cn(
-          "inline-flex items-center gap-1 rounded-md px-2 py-1",
-          "border border-[var(--border-subtle)] bg-[var(--surface-raised)]",
-          "text-[10px] text-content-muted hover:border-accent hover:text-accent transition-colors",
-        )}
-        title="Ver raciocínio completo"
-      >
-        <ZapIcon size={9} />
-        Como raciocinou →
-      </button>
-    </div>
+      </summary>
+      
+      <div className="mt-3 p-4 bg-[var(--surface-inset)] border border-[var(--border-subtle)] rounded-xl text-xs text-content-secondary grid grid-cols-2 gap-4 cursor-default animate-fade-in-up">
+        
+        {/* Memory & Knowledge */}
+        <div className="space-y-2">
+          <div className="font-semibold text-content-primary flex items-center gap-2">
+            <BrainIcon size={12} className="text-accent" /> Memória e Conhecimento
+          </div>
+          <ul className="space-y-1 pl-5 list-disc marker:text-accent/50 text-[11px]">
+            <li>{data.memory_used} memórias episódicas acionadas</li>
+            <li>{data.knowledge_used} fatos de conhecimento extraídos</li>
+            <li>{data.internet_sources} consultas web ativas</li>
+          </ul>
+        </div>
+        
+        {/* Metadados de Decisão */}
+        <div className="space-y-2">
+          <div className="font-semibold text-content-primary flex items-center gap-2">
+            <ZapIcon size={12} className="text-accent" /> Avaliação Cognitiva
+          </div>
+          <ul className="space-y-1 pl-5 list-disc marker:text-accent/50 text-[11px]">
+            <li>Confiança da resposta: <span className={confPct >= 80 ? "text-status-success" : "text-status-warning"}>{confPct}%</span></li>
+            <li>Risco avaliado: <span className={riskCls}>{data.risk}</span></li>
+            <li>Tempo de processamento: {data.estimated_time}ms</li>
+          </ul>
+        </div>
+        
+        {/* Botão de Trace Completo */}
+        <div className="col-span-2 pt-2 border-t border-[var(--border-subtle)] flex justify-end">
+          <button
+            onClick={onShowTrace}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--surface-raised)] border border-[var(--border-subtle)] text-[10px] font-semibold text-content-primary hover:border-accent hover:text-accent transition-colors"
+          >
+            Inspecionar Trace Completo →
+          </button>
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -618,7 +528,7 @@ export function ChatMessage({
 
         {/* Transparency chip (cognitive messages, post-stream) */}
         {showTransparency && cognitiveData && (
-          <TransparencyChip
+          <TransparencyAccordion
             data={cognitiveData}
             onShowTrace={onShowReasoning ?? openCtx}
           />

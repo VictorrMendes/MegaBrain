@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
   LayoutDashboardIcon,
@@ -18,24 +16,27 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useWorkspace } from "@/context/WorkspaceContext";
+import { useUIStore, type OverlayId } from "@/store/useUIStore";
 
-const NAV_ITEMS = [
-  { href: "/dashboard", icon: LayoutDashboardIcon, label: "Home"           },
-  { href: "/chat",      icon: MessageSquareIcon,   label: "Chat"           },
-  { href: "/missions",  icon: TargetIcon,           label: "Missões"        },
-  { href: "/memory",    icon: BrainIcon,            label: "Memória"        },
-  { href: "/knowledge", icon: BookOpenIcon,         label: "Conhecimento"   },
-  { href: "/inbox",     icon: InboxIcon,            label: "Inbox"          },
-  { href: "/timeline",  icon: ActivityIcon,         label: "Timeline"       },
-  { href: "/artifacts", icon: PackageIcon,          label: "Artifacts"      },
-  { href: "/runtime",      icon: MonitorIcon,  label: "Runtime"     },
-  { href: "/integrations", icon: PlugIcon,     label: "Integrações" },
+const NAV_ITEMS: { id: OverlayId | "chat", icon: any, label: string }[] = [
+  { id: "dashboard",    icon: LayoutDashboardIcon,  label: "Home"           },
+  { id: "chat",         icon: MessageSquareIcon,    label: "Chat"           },
+  { id: "missions",     icon: TargetIcon,           label: "Missões"        },
+  { id: "memory",       icon: BrainIcon,            label: "Memória"        },
+  { id: "knowledge",    icon: BookOpenIcon,         label: "Conhecimento"   },
+  { id: "inbox",        icon: InboxIcon,            label: "Inbox"          },
+  { id: "timeline",     icon: ActivityIcon,         label: "Timeline"       },
+  { id: "artifacts",    icon: PackageIcon,          label: "Artifacts"      },
+  { id: "runtime",      icon: MonitorIcon,          label: "Runtime"        },
+  { id: "integrations", icon: PlugIcon,             label: "Integrações"    },
 ];
 
 export function AppNav() {
-  const pathname  = usePathname();
   const { workspaces, current, setCurrent } = useWorkspace();
   const [showSwitcher, setShowSwitcher] = useState(false);
+  
+  const { overlayStack, pushOverlay, closeAllOverlays } = useUIStore();
+  const activeOverlay = overlayStack.length > 0 ? overlayStack[overlayStack.length - 1] : "chat";
 
   const initial = current?.name?.[0]?.toUpperCase() ?? "?";
 
@@ -54,12 +55,19 @@ export function AppNav() {
       </div>
 
       {/* Nav items */}
-      {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
-        const active = pathname.startsWith(href);
+      {NAV_ITEMS.map(({ id, icon: Icon, label }) => {
+        const active = activeOverlay === id;
+        
         return (
-          <Link
-            key={href}
-            href={href}
+          <button
+            key={id}
+            onClick={() => {
+              if (id === "chat") {
+                closeAllOverlays();
+              } else {
+                pushOverlay(id as OverlayId);
+              }
+            }}
             className={cn(
               "group mx-auto flex h-9 w-9 items-center justify-center rounded-lg",
               "transition-colors duration-[100ms] relative",
@@ -82,7 +90,7 @@ export function AppNav() {
             >
               {label}
             </span>
-          </Link>
+          </button>
         );
       })}
 

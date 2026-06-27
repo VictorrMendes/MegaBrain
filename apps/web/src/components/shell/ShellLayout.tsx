@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { AppNav }              from "@/components/nav/AppNav";
 import { MobileNav }           from "@/components/nav/MobileNav";
 import { TopBar }              from "@/components/shell/TopBar";
@@ -10,9 +11,27 @@ import { ServiceWorkerRegistrar } from "@/components/shell/ServiceWorkerRegistra
 import { WorkspaceProvider }   from "@/context/WorkspaceContext";
 import { NotificationProvider } from "@/context/NotificationContext";
 import { TooltipProvider }     from "@/components/ui";
+import { useUIStore, type OverlayId } from "@/store/useUIStore";
+
+// UX Overhaul: True SPA components
+import { ChatPanel } from "@/components/chat/ChatPanel";
+import { OverlayManager } from "@/components/shell/OverlayManager";
+import { LivingDock } from "@/components/shell/LivingDock";
 
 export function ShellLayout({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const pathname = usePathname();
+  const { overlayStack, pushOverlay } = useUIStore();
+
+  // Deep Link Support: Initialize overlay based on URL
+  useEffect(() => {
+    if (pathname && overlayStack.length === 0) {
+      const route = pathname.replace('/', '');
+      if (["memory", "knowledge", "missions", "artifacts", "inbox"].includes(route)) {
+        pushOverlay(route as OverlayId);
+      }
+    }
+  }, [pathname, overlayStack.length, pushOverlay]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -39,20 +58,36 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
             {/* ── OS Shell ── */}
             <div className="flex h-[100dvh] flex-col overflow-hidden bg-[var(--surface-base)] text-content-primary">
 
-              {/* TopBar */}
+              {/* TopBar / CognitiveStatusBar (poderá ser unificado depois) */}
               <TopBar onOpenPalette={() => setPaletteOpen(true)} />
 
               {/* Main area */}
-              <div className="flex flex-1 overflow-hidden">
+              <div className="flex flex-1 overflow-hidden relative">
                 <AppNav />
-                <main className="flex-1 overflow-hidden pb-[var(--mobile-nav-h)] md:pb-0">
-                  {children}
+                
+                <main className="relative flex-1 overflow-hidden pb-[var(--mobile-nav-h)] md:pb-0">
+                  {/* Fundo Constante: O Chat nunca desmonta */}
+                  <div className="absolute inset-0">
+                    <ChatPanel />
+                  </div>
+                  
+                  {/* Camada Portal: Overlays (Memory, Knowledge, etc) */}
+                  <OverlayManager />
+                  
+                  {/* Fallback de rotas do Next.js (children invisível ou renderizado se não houver overlay) */}
+                  {/* Por enquanto escondemos o children se for SPA pura, ou deixamos para deep links */}
+                  <div className="hidden">
+                    {children}
+                  </div>
                 </main>
               </div>
 
               {/* StatusBar — desktop only */}
               <StatusBar />
             </div>
+
+            {/* ── Sinais de Vida ── */}
+            <LivingDock />
 
             {/* ── Mobile bottom navigation ── */}
             <MobileNav />
