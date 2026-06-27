@@ -5,12 +5,15 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from core.database import AsyncSessionLocal
+from kernel.events import event_bus
 from models.workspace import Workspace
 from engines.integration.engine import IntegrationManager
 from sqlalchemy import select
 
 async def main():
-    async with AsyncSessionLocal() as session:
+    await event_bus.connect()
+    try:
+        async with AsyncSessionLocal() as session:
         # Find active workspace
         result = await session.execute(select(Workspace).where(Workspace.is_active == True))
         workspace = result.scalar_one_or_none()
@@ -37,6 +40,8 @@ async def main():
             print("Integração Docker habilitada e sincronizada com sucesso!")
         except Exception as e:
             print(f"Erro ao conectar integração: {e}")
+    finally:
+        await event_bus.disconnect()
 
 if __name__ == "__main__":
     asyncio.run(main())
