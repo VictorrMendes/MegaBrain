@@ -496,6 +496,7 @@ export type CognitiveStreamEvent =
       output: string | null;
       duration_ms: number | null;
     }
+  | { event: "llm_token"; token: string }
   | { event: "done"; response: OrchestratorResponse }
   | { event: "error"; message: string };
 
@@ -557,11 +558,25 @@ async function patch<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+export interface WorkspaceSession {
+  workspace_id: string;
+  active_conversation_id: string | null;
+  current_page: string | null;
+  ui_state: Record<string, unknown>;
+  updated_at: string;
+}
+
 export const api = {
   // ── Workspaces ────────────────────────────────────────────────────────
   listWorkspaces: () => get<Workspace[]>("/workspaces/"),
   createWorkspace: (name: string, description?: string) =>
     post<Workspace>("/workspaces/", { name, description }),
+  getWorkspaceSession: (wsId: string) =>
+    get<WorkspaceSession>(`/workspaces/${wsId}/session`),
+  updateWorkspaceSession: (
+    wsId: string,
+    update: Partial<Omit<WorkspaceSession, "workspace_id" | "updated_at">>,
+  ) => patch<WorkspaceSession>(`/workspaces/${wsId}/session`, update),
 
   // ── Conversations ─────────────────────────────────────────────────────
   listConversations: (wsId: string) =>
@@ -697,6 +712,10 @@ export const api = {
     post<Mission>(`/workspaces/${wsId}/missions/${missionId}/run`),
   cancelMission: (wsId: string, missionId: string) =>
     post<Mission>(`/workspaces/${wsId}/missions/${missionId}/cancel`),
+  pauseMission: (wsId: string, missionId: string) =>
+    post<Mission>(`/workspaces/${wsId}/missions/${missionId}/pause`),
+  resumeMission: (wsId: string, missionId: string) =>
+    post<Mission>(`/workspaces/${wsId}/missions/${missionId}/resume`),
 
   // ── Artifacts ─────────────────────────────────────────────────────────
   listArtifacts: (wsId: string, missionId?: string) =>

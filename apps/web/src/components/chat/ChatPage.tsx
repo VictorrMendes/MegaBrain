@@ -124,11 +124,12 @@ export function ChatPage() {
     setDrawerOpen(false);
 
     (async () => {
-      const [convs, docs, available, wPlugins] = await Promise.all([
+      const [convs, docs, available, wPlugins, session] = await Promise.all([
         api.listConversations(workspace.id),
         api.listDocuments(workspace.id),
         api.listAvailablePlugins(workspace.id),
         api.listWorkspacePlugins(workspace.id),
+        api.getWorkspaceSession(workspace.id).catch(() => null),
       ]);
       setConversations(convs);
       setDocuments(docs);
@@ -136,7 +137,11 @@ export function ChatPage() {
       setWorkspacePlugins(wPlugins);
 
       if (convs.length > 0) {
-        await loadConversation(workspace.id, convs[0].id);
+        const restoredId = session?.active_conversation_id;
+        const targetId = (restoredId && convs.some((c) => c.id === restoredId))
+          ? restoredId
+          : convs[0].id;
+        await loadConversation(workspace.id, targetId);
       }
     })();
   }, [workspace?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -146,6 +151,9 @@ export function ChatPage() {
     setActiveConvId(conversationId);
     setSidePanel(null);
     setDrawerOpen(false);
+    api.updateWorkspaceSession(workspaceId, {
+      active_conversation_id: conversationId,
+    }).catch(() => { /* non-critical */ });
     const msgs = await api.getMessages(workspaceId, conversationId);
     setMessages(
       msgs
@@ -167,6 +175,9 @@ export function ChatPage() {
     setActiveConvId(conv.id);
     setMessages([]);
     setSidePanel(null);
+    api.updateWorkspaceSession(workspace.id, {
+      active_conversation_id: conv.id,
+    }).catch(() => { /* non-critical */ });
   }
 
   // ─── document upload ───
@@ -289,6 +300,14 @@ export function ChatPage() {
                 };
               }),
             );
+          } else if (evt.event === "llm_token") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === streamingId
+                  ? { ...m, content: (m.content ?? "") + evt.token, streamPhase: "generating" }
+                  : m,
+              ),
+            );
           } else if (evt.event === "done") {
             const r = evt.response;
             const cognitiveData: CognitiveData = {
@@ -309,9 +328,11 @@ export function ChatPage() {
                 m.id === streamingId
                   ? {
                       ...m,
-                      content:       r.response,
-                      streaming:     false,
-                      streamPhase:   null,
+                      // Prefer accumulated tokens; fall back to r.response if
+                      // streaming did not fire (non-streaming LLM path).
+                      content:     m.content || r.response,
+                      streaming:   false,
+                      streamPhase: null,
                       cognitiveData,
                     }
                   : m,

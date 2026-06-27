@@ -27,6 +27,7 @@ import {
   FilterIcon,
   MinusCircleIcon,
   PackageIcon,
+  PauseIcon,
   PlayIcon,
   PlusIcon,
   RefreshCwIcon,
@@ -597,6 +598,18 @@ function MissionDetailPanel({
                 <Button variant="primary" size="sm"
                   onClick={() => onAction(() => api.runMission(workspaceId, mission.id))}>
                   <PlayIcon size={12} className="mr-1.5" /> Executar
+                </Button>
+              )}
+              {mission.status === "running" && (
+                <Button variant="secondary" size="sm"
+                  onClick={() => onAction(() => api.pauseMission(workspaceId, mission.id))}>
+                  <PauseIcon size={12} className="mr-1.5" /> Pausar
+                </Button>
+              )}
+              {mission.status === "paused" && (
+                <Button variant="primary" size="sm"
+                  onClick={() => onAction(() => api.resumeMission(workspaceId, mission.id))}>
+                  <PlayIcon size={12} className="mr-1.5" /> Retomar
                 </Button>
               )}
               {mission.status === "failed" && (

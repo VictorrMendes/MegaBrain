@@ -161,6 +161,7 @@ class KhonshuRuntime:
             search_engine=self._search,
             mission_engine=self._mission,
             metrics=self._metrics,
+            session_factory=AsyncSessionLocal,
         )
 
         # Event subscriptions

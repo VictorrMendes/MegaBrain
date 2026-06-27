@@ -132,8 +132,8 @@ export function NotificationCenter({ open, onClose }: NotificationCenterProps) {
           "fixed right-2 top-[44px] z-notification",
           "w-[360px] max-h-[calc(100vh-60px)]",
           "flex flex-col overflow-hidden",
-          "rounded-xl border border-[var(--border-default)]",
-          "bg-surface-overlay shadow-xl",
+          "rounded-xl",
+          "glass-lg shadow-xl",
           "animate-slide-down",
         )}
         onClick={(e) => e.stopPropagation()}

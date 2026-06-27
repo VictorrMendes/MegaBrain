@@ -61,9 +61,51 @@ _PROFILE = ExecutionProfile(
 
 
 def _strip_think(text: str) -> str:
+    """Remove <think>…</think> blocks emitted by reasoning models."""
     if "</think>" in text:
         return text[text.rfind("</think>") + len("</think>"):].strip()
     return text.strip()
+
+
+def _extract_json(text: str) -> dict:
+    """Robustly extract a JSON object from LLM output.
+
+    Handles: plain JSON, markdown fences (```json…```), inline text
+    before/after the object, and nested braces.  Raises ValueError if
+    nothing parseable is found.
+    """
+    text = _strip_think(text)
+
+    # 1. Try direct parse first (fastest path)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Strip markdown code fences
+    stripped = re.sub(r"^```[a-zA-Z]*\n?", "", text.strip())
+    stripped = re.sub(r"\n?```$", "", stripped.strip())
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        pass
+
+    # 3. Find the outermost { … } block
+    start = text.find("{")
+    if start != -1:
+        depth = 0
+        for i, ch in enumerate(text[start:], start):
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[start : i + 1])
+                    except json.JSONDecodeError:
+                        break
+
+    raise ValueError(f"No JSON object found in LLM output: {text[:200]!r}")
 
 
 class DecisionEngine:
@@ -75,15 +117,12 @@ class DecisionEngine:
     async def decide(
         self, message: str, context_hint: str = ""
     ) -> Decision:
-        """Analyze message and return routing Decision.
-
-        context_hint: optional short summary of current system state
-        to help the LLM make a better routing decision.
-        """
+        """Analyze message and return routing Decision."""
         user_content = f"Message: {message}"
         if context_hint:
             user_content += f"\n\nContext: {context_hint[:300]}"
 
+        raw_content = ""
         try:
             result = await self._llm.chat(
                 messages=[
@@ -92,15 +131,13 @@ class DecisionEngine:
                 ],
                 profile=_PROFILE,
             )
-            raw = _strip_think(result.content)
-            if raw.startswith("```"):
-                raw = re.sub(r"^```\w*\n?", "", raw)
-                raw = raw.rstrip("`").strip()
-            data: dict = json.loads(raw)
+            raw_content = result.content
+            data: dict = _extract_json(raw_content)
         except Exception as exc:
             logger.warning(
                 "decision_engine.parse_failed",
                 error=str(exc),
+                raw=raw_content[:300],
                 message=message[:100],
             )
             return Decision()

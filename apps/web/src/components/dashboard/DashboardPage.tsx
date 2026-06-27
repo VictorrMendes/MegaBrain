@@ -192,6 +192,13 @@ export function DashboardPage() {
     if (workspace) load(workspace);
   }, [workspace?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-refresh every 30s
+  useEffect(() => {
+    if (!workspace) return;
+    const id = setInterval(() => load(workspace, true), 30_000);
+    return () => clearInterval(id);
+  }, [workspace?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (wsLoading || loading) {
     return (
       <div className="flex h-full items-center justify-center">

@@ -143,20 +143,32 @@ async def stream(
     )
 
     async def event_generator():
-        queue: asyncio.Queue = asyncio.Queue()
+        step_queue: asyncio.Queue = asyncio.Queue()
+        token_queue: asyncio.Queue = asyncio.Queue()
 
         async def on_step(node) -> None:
-            await queue.put(node)
+            await step_queue.put(("step", node))
+
+        async def on_token(chunk: str) -> None:
+            await token_queue.put(chunk)
 
         task = asyncio.create_task(
-            orchestrator.execute(orch_request, on_step=on_step)
+            orchestrator.execute(
+                orch_request, on_step=on_step, on_token=on_token
+            )
         )
 
         try:
             while not task.done():
+                # Drain tokens with priority (tokens come fast)
+                while not token_queue.empty():
+                    chunk = token_queue.get_nowait()
+                    yield _sse({"event": "llm_token", "token": chunk})
+
+                # Check for trace steps
                 try:
-                    node = await asyncio.wait_for(
-                        queue.get(), timeout=0.05
+                    kind, node = await asyncio.wait_for(
+                        step_queue.get(), timeout=0.02
                     )
                     yield _sse({
                         "event": "trace_step",
@@ -169,9 +181,14 @@ async def stream(
                 except asyncio.TimeoutError:
                     pass
 
-            # Drain any remaining steps enqueued before task finished
-            while not queue.empty():
-                node = queue.get_nowait()
+            # Drain remaining tokens
+            while not token_queue.empty():
+                chunk = token_queue.get_nowait()
+                yield _sse({"event": "llm_token", "token": chunk})
+
+            # Drain remaining trace steps
+            while not step_queue.empty():
+                _, node = step_queue.get_nowait()
                 yield _sse({
                     "event": "trace_step",
                     "step": node.step,

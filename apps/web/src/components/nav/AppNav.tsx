@@ -49,7 +49,7 @@ export function AppNav() {
       )}
     >
       {/* Logo mark */}
-      <div className="mx-auto mb-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-dim text-accent text-sm font-bold tracking-widest select-none">
+      <div className="mx-auto mb-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-dim text-accent text-sm font-bold tracking-widest select-none shadow-glow-sm">
         K
       </div>
 
@@ -64,7 +64,7 @@ export function AppNav() {
               "group mx-auto flex h-9 w-9 items-center justify-center rounded-lg",
               "transition-colors duration-[100ms] relative",
               active
-                ? "bg-accent-dim text-accent"
+                ? "bg-accent-dim text-accent shadow-glow-sm"
                 : "text-content-muted hover:bg-surface-subtle hover:text-content-secondary",
             )}
           >
@@ -111,7 +111,7 @@ export function AppNav() {
             className={cn(
               "pointer-events-none absolute left-full ml-3 z-50",
               "hidden whitespace-nowrap rounded-md",
-              "bg-[var(--surface-overlay)] border border-[var(--border-default)]",
+              "glass",
               "px-2.5 py-1 text-xs text-content-primary shadow-xl",
               "group-hover:flex items-center",
             )}
@@ -126,8 +126,8 @@ export function AppNav() {
         <div
           className={cn(
             "absolute bottom-2 left-full ml-2 z-50 min-w-52",
-            "rounded-xl border border-[var(--border-default)]",
-            "bg-[var(--surface-overlay)] py-1.5 shadow-2xl",
+            "rounded-xl",
+            "glass-lg py-1.5 shadow-2xl",
           )}
           onMouseLeave={() => setShowSwitcher(false)}
         >

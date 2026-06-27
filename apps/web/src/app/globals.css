@@ -107,8 +107,8 @@
   --t-spring: var(--duration-normal) var(--ease-spring);
 
   /* ── Typography ─────────────────────────────────────────────── */
-  --font-sans:  var(--font-geist-sans), "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono:  var(--font-geist-mono), "JetBrains Mono", "Fira Code", monospace;
+  --font-sans:  var(--font-space-grotesk), "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono:  var(--font-jetbrains), "Fira Code", monospace;
 
   /* ── Font weights ────────────────────────────────────────────── */
   --weight-regular:   400;

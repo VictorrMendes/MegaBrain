@@ -245,13 +245,23 @@ function IntegrationCard({
     }
   }
 
+  const borderClass =
+    health === "unhealthy" ? "border-status-error/40 bg-[var(--surface-raised)]" :
+    health === "degraded"  ? "border-status-warning/40 bg-[var(--surface-raised)]" :
+    integration.status === "active"
+      ? "border-[var(--border-default)] bg-[var(--surface-raised)]"
+      : "border-[var(--border-subtle)] bg-[var(--surface-subtle)] opacity-70";
+
+  const healthBadgeCls =
+    health === "healthy"   ? "bg-status-success/10 text-status-success border-status-success/20" :
+    health === "degraded"  ? "bg-status-warning/10 text-status-warning border-status-warning/20" :
+    health === "unhealthy" ? "bg-status-error/10 text-status-error border-status-error/20" :
+    "bg-[var(--surface-subtle)] text-content-muted border-[var(--border-subtle)]";
+
+  const lastSyncRecord = history[0] ?? null;
+
   return (
-    <div className={cn(
-      "rounded-xl border transition-colors",
-      integration.status === "active"
-        ? "border-[var(--border-default)] bg-[var(--surface-raised)]"
-        : "border-[var(--border-subtle)] bg-[var(--surface-subtle)] opacity-70",
-    )}>
+    <div className={cn("rounded-xl border transition-colors", borderClass)}>
       {/* Header */}
       <div className="flex items-center gap-3 p-4">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-subtle)] text-sm">
@@ -259,10 +269,13 @@ function IntegrationCard({
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
+          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
             <span className="text-sm font-medium text-content-primary">{integration.name}</span>
-            <span className={cn("text-[10px]", healthColor(health))}>
-              ● {healthLabel(health)}
+            <span className={cn(
+              "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
+              healthBadgeCls,
+            )}>
+              {healthLabel(health)}
             </span>
           </div>
           <span className="text-[11px] text-content-muted">
@@ -318,6 +331,42 @@ function IntegrationCard({
       {/* Expanded: sync history */}
       {expanded && (
         <div className="border-t border-[var(--border-subtle)] mx-4 pt-3 pb-4">
+          {/* Last sync summary — latency + error prominent */}
+          {lastSyncRecord && (
+            <div className="mb-3">
+              <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                <span className={cn(
+                  "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
+                  lastSyncRecord.error_message
+                    ? "bg-status-error/10 text-status-error border-status-error/20"
+                    : "bg-status-success/10 text-status-success border-status-success/20",
+                )}>
+                  {lastSyncRecord.error_message ? "Falhou" : "Sucesso"}
+                </span>
+                {lastSyncRecord.duration_ms != null && (
+                  <span className="text-[11px] text-content-muted">
+                    <span className="font-medium text-content-secondary">{lastSyncRecord.duration_ms} ms</span>{" "}latência
+                  </span>
+                )}
+                {lastSyncRecord.items_synced != null && lastSyncRecord.items_synced > 0 && (
+                  <span className="text-[11px] text-content-muted">
+                    <span className="font-medium text-content-secondary">{lastSyncRecord.items_synced}</span>{" "}itens
+                  </span>
+                )}
+                {lastSyncRecord.items_failed != null && lastSyncRecord.items_failed > 0 && (
+                  <span className="text-[11px] text-status-error">
+                    <span className="font-medium">{lastSyncRecord.items_failed}</span>{" "}falhas
+                  </span>
+                )}
+              </div>
+              {lastSyncRecord.error_message && (
+                <div className="rounded-md bg-status-error/5 border border-status-error/20 px-3 py-2 text-[11px] text-status-error font-mono">
+                  {lastSyncRecord.error_message}
+                </div>
+              )}
+            </div>
+          )}
+
           <p className="text-[10px] font-semibold uppercase tracking-wider text-content-muted mb-2">
             Histórico de sync
           </p>

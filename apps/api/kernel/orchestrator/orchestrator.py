@@ -35,6 +35,9 @@ from .models import (
 )
 from .trace import ReasoningTrace
 
+# Callback type for streaming LLM tokens
+TokenCallback = Callable[[str], Awaitable[None]]
+
 logger = get_logger("khonshu.orchestrator")
 
 
@@ -56,6 +59,7 @@ class CognitiveOrchestrator:
         search_engine=None,
         mission_engine=None,
         metrics=None,
+        session_factory=None,
     ) -> None:
         self._context = context_builder
         self._decision = decision_engine
@@ -66,6 +70,7 @@ class CognitiveOrchestrator:
         self._search = search_engine
         self._mission = mission_engine
         self._metrics = metrics
+        self._sessions = session_factory  # for persisting chat messages
 
     # ------------------------------------------------------------------ #
     # Public API                                                           #
@@ -75,11 +80,12 @@ class CognitiveOrchestrator:
         self,
         request: OrchestratorRequest,
         on_step: Callable[["TraceNode"], Awaitable[None]] | None = None,
+        on_token: TokenCallback | None = None,
     ) -> OrchestratorResponse:
         """Run the full cognitive pipeline and return a rich response.
 
-        on_step, if provided, is called after each pipeline step
-        completes (or is skipped/failed). Use this for streaming UIs.
+        on_step: called after each pipeline step (trace streaming).
+        on_token: called for each LLM text token (word-level streaming).
         """
         workspace_id = UUID(request.workspace_id)
         trace = ReasoningTrace()
@@ -110,7 +116,7 @@ class CognitiveOrchestrator:
 
         # ── 5. Generate response ─────────────────────────────────────────
         response_text = await self._generate(
-            request, ctx, search_context, trace
+            request, ctx, search_context, trace, on_token
         )
         if on_step:
             await on_step(trace.nodes[-1])
@@ -128,7 +134,7 @@ class CognitiveOrchestrator:
         if on_step:
             await on_step(trace.nodes[-1])
 
-        return OrchestratorResponse(
+        orch_response = OrchestratorResponse(
             response=response_text,
             decision=decision,
             trace=trace.nodes,
@@ -149,6 +155,11 @@ class CognitiveOrchestrator:
             estimated_time=decision.estimated_latency,
             approval_required=decision.need_confirmation,
         )
+
+        # ── 7. Persist to conversation ───────────────────────────────────
+        await self._persist_conversation(request, response_text)
+
+        return orch_response
 
     # ------------------------------------------------------------------ #
     # Pipeline steps                                                       #
@@ -256,30 +267,73 @@ class CognitiveOrchestrator:
             )
             return []
 
-    async def _generate(self, request, ctx, search_context, trace):
+    async def _generate(
+        self,
+        request,
+        ctx,
+        search_context,
+        trace,
+        on_token: TokenCallback | None = None,
+    ):
         node = trace.begin("generate", "LLMProvider")
         enriched_prompt = ctx.system_prompt
         if search_context:
             enriched_prompt += (
-                f"\n\n## Resultados de Pesquisa Web\n{search_context}"
+                "\n\n## Resultados de Pesquisa Web\n" + search_context
             )
+        messages = [
+            ChatMessage(role="system", content=enriched_prompt),
+            ChatMessage(role="user", content=request.message),
+        ]
         try:
-            result = await self._llm.chat(
-                messages=[
-                    ChatMessage(
-                        role="system", content=enriched_prompt
-                    ),
-                    ChatMessage(
-                        role="user", content=request.message
-                    ),
-                ],
-            )
-            response_text = result.content
+            if on_token is not None:
+                # True token streaming — emit each chunk immediately
+                chunks: list[str] = []
+                async for chunk in self._llm.chat_stream(messages):
+                    chunks.append(chunk)
+                    await on_token(chunk)
+                response_text = "".join(chunks)
+            else:
+                result = await self._llm.chat(messages)
+                response_text = result.content
+
             trace.complete(node, f"{len(response_text)} chars")
             return response_text
         except Exception as exc:
             trace.fail(node, str(exc))
             raise
+
+    async def _persist_conversation(
+        self, request: OrchestratorRequest, response_text: str
+    ) -> None:
+        """Save the user ↔ assistant exchange to the conversations table."""
+        if self._sessions is None or not request.conversation_id:
+            return
+        try:
+            from models.conversation import Message, MessageRole
+            from sqlalchemy import select
+            from models.conversation import Conversation
+
+            conv_id = UUID(request.conversation_id)
+            async with self._sessions() as session:
+                conv = await session.get(Conversation, conv_id)
+                if conv is None:
+                    return
+                session.add(Message(
+                    conversation_id=conv_id,
+                    role=MessageRole.user,
+                    content=request.message,
+                ))
+                session.add(Message(
+                    conversation_id=conv_id,
+                    role=MessageRole.assistant,
+                    content=response_text,
+                ))
+                await session.commit()
+        except Exception as exc:
+            logger.warning(
+                "orchestrator.persist_failed", error=str(exc)
+            )
 
     async def _maybe_learn(
         self,

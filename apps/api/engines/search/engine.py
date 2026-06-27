@@ -15,8 +15,8 @@ from __future__ import annotations
 from uuid import UUID
 
 from engines.search.base import SearchProvider, SearchRegistry
-from kernel.capabilities.registry import Capability, RiskLevel
 from kernel.capabilities import capability_registry
+from kernel.capabilities.registry import Capability, RiskLevel
 from kernel.logger import get_logger
 
 logger = get_logger(__name__)
@@ -128,8 +128,15 @@ class SearchEngine:
     def _summarise(self, results) -> str:
         if not results:
             return "Nenhum resultado encontrado."
-        lines = [f"• {r.title}: {r.snippet[:120]}" for r in results[:3]]
-        return "\n".join(lines)
+        lines = []
+        for r in results[:5]:
+            source = f" ({r.source})" if r.source else ""
+            date = f" [{r.published_at}]" if r.published_at else ""
+            lines.append(
+                f"• {r.title}{date}{source}\n  {r.snippet[:200]}"
+                f"\n  URL: {r.url}"
+            )
+        return "\n\n".join(lines)
 
     async def _store_as_knowledge(
         self, workspace_id: UUID, query: str, results, provider_slug: str
@@ -175,7 +182,10 @@ class SearchEngine:
         )
         cap.register_tool(
             name="web_search.search",
-            description="Search the web for a query. Returns titles, URLs and snippets.",
+            description=(
+                "Search the web for a query. "
+                "Returns titles, URLs and snippets."
+            ),
             parameters={
                 "query": {
                     "type": "string",

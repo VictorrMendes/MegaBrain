@@ -5,6 +5,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from kernel.events import event_bus
+from kernel.events.schema import DomainEventType, KhonshuEvent
 from kernel.logger import get_logger
 from kernel.providers.base import EmbeddingProvider
 from models.memory import Memory, MemoryType
@@ -60,13 +61,13 @@ class MemoryEngine:
         logger.info("memory.created", id=str(memory.id), type=type.value)
 
         try:
-            await event_bus.publish(
-                "khonshu.memories",
-                {
-                    "type": "memory.created",
-                    "memory_id": str(memory.id),
-                    "workspace_id": str(workspace_id),
-                },
+            await event_bus.publish_event(
+                KhonshuEvent(
+                    type=DomainEventType.MEMORY_CREATED,
+                    workspace_id=workspace_id,
+                    source="memory_engine",
+                    payload={"memory_id": str(memory.id)},
+                )
             )
         except RuntimeError:
             pass

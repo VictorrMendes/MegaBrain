@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from kernel.events.schema import IntegrationEventType
+from kernel.events.schema import IntegrationEventType, KhonshuEvent
 from kernel.logger import get_logger
 from models.mission import MissionTrigger
 
@@ -43,30 +43,20 @@ class IntegrationIntelligence:
         """Wire up all integration event subscriptions."""
         from kernel.events import event_bus
 
-        event_bus.subscribe(
-            "khonshu.events",
-            self._handle_event,
-        )
+        for event_type in (
+            IntegrationEventType.DOCKER_CONTAINER_FAILED,
+            IntegrationEventType.DOCKER_CONTAINER_UNHEALTHY,
+            IntegrationEventType.GITHUB_PR_REVIEW_NEEDED,
+            IntegrationEventType.GITHUB_ISSUE_OPENED,
+            IntegrationEventType.EMAIL_IMPORTANT,
+            IntegrationEventType.WEATHER_UPDATED,
+            IntegrationEventType.HOME_PRESENCE_DETECTED,
+            IntegrationEventType.HOME_PRESENCE_GONE,
+        ):
+            event_bus.subscribe_event(event_type, self._handle_event)
         logger.info("integration_intelligence.subscribed")
 
-    def _is_integration_event(self, event) -> bool:
-        return event.type.startswith(
-            (
-                "integration.",
-                "docker.",
-                "calendar.",
-                "github.",
-                "homeassistant.",
-                "email.",
-                "notion.",
-                "weather.",
-                "telegram.",
-            )
-        )
-
-    async def _handle_event(self, event) -> None:
-        if not self._is_integration_event(event):
-            return
+    async def _handle_event(self, event: KhonshuEvent) -> None:
         try:
             await self._dispatch(event)
         except Exception as exc:
@@ -76,7 +66,7 @@ class IntegrationIntelligence:
                 error=str(exc),
             )
 
-    async def _dispatch(self, event) -> None:
+    async def _dispatch(self, event: KhonshuEvent) -> None:
         t = event.type
 
         if t == IntegrationEventType.DOCKER_CONTAINER_FAILED:
@@ -101,7 +91,7 @@ class IntegrationIntelligence:
     # Docker                                                               #
     # ------------------------------------------------------------------ #
 
-    async def _on_container_failed(self, event) -> None:
+    async def _on_container_failed(self, event: KhonshuEvent) -> None:
         p = event.payload
         container = p.get("container_name", p.get("id", "unknown"))
         logger.info(
@@ -123,7 +113,7 @@ class IntegrationIntelligence:
             },
         )
 
-    async def _on_container_unhealthy(self, event) -> None:
+    async def _on_container_unhealthy(self, event: KhonshuEvent) -> None:
         p = event.payload
         container = p.get("container_name", "unknown")
         await self._knowledge.store_observation(
@@ -140,7 +130,7 @@ class IntegrationIntelligence:
     # GitHub                                                               #
     # ------------------------------------------------------------------ #
 
-    async def _on_pr_review_needed(self, event) -> None:
+    async def _on_pr_review_needed(self, event: KhonshuEvent) -> None:
         p = event.payload
         pr_title = p.get("title", "PR")
         pr_url = p.get("url", "")
@@ -155,7 +145,7 @@ class IntegrationIntelligence:
             confidence=0.95,
         )
 
-    async def _on_github_issue(self, event) -> None:
+    async def _on_github_issue(self, event: KhonshuEvent) -> None:
         p = event.payload
         title = p.get("title", "Issue")
         repo = p.get("repository", "")
@@ -170,7 +160,7 @@ class IntegrationIntelligence:
     # Email                                                                #
     # ------------------------------------------------------------------ #
 
-    async def _on_important_email(self, event) -> None:
+    async def _on_important_email(self, event: KhonshuEvent) -> None:
         p = event.payload
         subject = p.get("subject", "")
         sender = p.get("from", "")
@@ -187,7 +177,7 @@ class IntegrationIntelligence:
     # Weather                                                              #
     # ------------------------------------------------------------------ #
 
-    async def _on_weather_update(self, event) -> None:
+    async def _on_weather_update(self, event: KhonshuEvent) -> None:
         p = event.payload
         condition = p.get("condition", "")
         location = p.get("location", "")
@@ -206,7 +196,7 @@ class IntegrationIntelligence:
     # Home Assistant                                                       #
     # ------------------------------------------------------------------ #
 
-    async def _on_presence_change(self, event) -> None:
+    async def _on_presence_change(self, event: KhonshuEvent) -> None:
         p = event.payload
         person = p.get("person", "owner")
         present = (

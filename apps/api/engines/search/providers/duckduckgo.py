@@ -1,93 +1,139 @@
-"""DuckDuckGo search provider — no API key required."""
+"""DuckDuckGo search provider using the duckduckgo-search package.
+
+Replaces the broken Instant Answer API endpoint with real web results via
+DDGS (duckduckgo_search).  No API key required.
+
+Provider slug: duckduckgo
+"""
 from __future__ import annotations
 
-import httpx
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 from engines.search.base import SearchProvider, SearchRegistry, SearchResult
 from kernel.logger import get_logger
 
 logger = get_logger(__name__)
 
-_DDG_SEARCH = "https://api.duckduckgo.com/"
-_DDG_HTML = "https://html.duckduckgo.com/html/"
+_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ddgs")
+
+
+def _domain(url: str) -> str:
+    try:
+        from urllib.parse import urlparse
+        return urlparse(url).netloc.removeprefix("www.")
+    except Exception:
+        return ""
+
+
+def _dedup(results: list[SearchResult]) -> list[SearchResult]:
+    """Remove duplicate URLs, keep the first occurrence."""
+    seen: set[str] = set()
+    out: list[SearchResult] = []
+    for r in results:
+        key = r.url.rstrip("/")
+        if key not in seen:
+            seen.add(key)
+            out.append(r)
+    return out
 
 
 @SearchRegistry.register
 class DuckDuckGoProvider(SearchProvider):
     slug = "duckduckgo"
     name = "DuckDuckGo"
-    description = "Privacy-first search engine, no API key required"
+    description = "Real web search via DuckDuckGo — no API key required"
     requires_api_key = False
     supports_news = True
 
     async def search(
-        self, query: str, *, limit: int = 5
+        self, query: str, *, limit: int = 6
     ) -> list[SearchResult]:
-        """Search via DuckDuckGo Instant Answer API (JSON endpoint)."""
+        """Return real organic web results for query."""
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    _DDG_SEARCH,
-                    params={
-                        "q": query,
-                        "format": "json",
-                        "no_redirect": "1",
-                        "no_html": "1",
-                        "skip_disambig": "1",
-                    },
-                    headers={"User-Agent": "Khonshu/1.0 search agent"},
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            results = await asyncio.wait_for(
+                self._run_search(query, limit),
+                timeout=12.0,
+            )
+        except TimeoutError:
+            logger.warning("duckduckgo.search_timeout", query=query)
+            return []
         except Exception as exc:
             logger.warning("duckduckgo.search_failed", error=str(exc))
             return []
 
-        results: list[SearchResult] = []
-
-        # Abstract (instant answer)
-        if data.get("Abstract"):
-            results.append(SearchResult(
-                title=data.get("Heading", query),
-                url=data.get("AbstractURL", ""),
-                snippet=data["Abstract"],
-                source="duckduckgo_abstract",
-            ))
-
-        # Related topics
-        for topic in data.get("RelatedTopics", []):
-            if len(results) >= limit:
-                break
-            if isinstance(topic, dict) and topic.get("Text"):
-                url = topic.get("FirstURL", "")
-                results.append(SearchResult(
-                    title=topic["Text"][:80],
-                    url=url,
-                    snippet=topic["Text"],
-                    source="duckduckgo_topic",
-                ))
-
-        # Results
-        for item in data.get("Results", []):
-            if len(results) >= limit:
-                break
-            if item.get("Text"):
-                results.append(SearchResult(
-                    title=item.get("Text", "")[:80],
-                    url=item.get("FirstURL", ""),
-                    snippet=item.get("Text", ""),
-                    source="duckduckgo_result",
-                ))
-
+        deduped = _dedup(results)
         logger.info(
-            "duckduckgo.search_done",
-            query=query,
-            results=len(results),
+            "duckduckgo.search_done", query=query, results=len(deduped)
         )
-        return results[:limit]
+        return deduped[:limit]
 
     async def news(
-        self, query: str, *, limit: int = 5
+        self, query: str, *, limit: int = 6
     ) -> list[SearchResult]:
-        """Search news via DuckDuckGo (same endpoint, news intent)."""
-        return await self.search(f"{query} news", limit=limit)
+        try:
+            results = await asyncio.wait_for(
+                self._run_news(query, limit),
+                timeout=12.0,
+            )
+        except TimeoutError:
+            logger.warning("duckduckgo.news_timeout", query=query)
+            return []
+        except Exception as exc:
+            logger.warning("duckduckgo.news_failed", error=str(exc))
+            return []
+
+        deduped = _dedup(results)
+        logger.info("duckduckgo.news_done", query=query, results=len(deduped))
+        return deduped[:limit]
+
+    # ------------------------------------------------------------------
+    # Sync helpers (DDGS is synchronous; run in thread pool)
+    # ------------------------------------------------------------------
+
+    async def _run_search(
+        self, query: str, limit: int
+    ) -> list[SearchResult]:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            _executor, self._sync_search, query, limit
+        )
+
+    async def _run_news(
+        self, query: str, limit: int
+    ) -> list[SearchResult]:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            _executor, self._sync_news, query, limit
+        )
+
+    def _sync_search(self, query: str, limit: int) -> list[SearchResult]:
+        from duckduckgo_search import DDGS  # type: ignore[import]
+
+        results: list[SearchResult] = []
+        with DDGS() as ddgs:
+            for r in ddgs.text(query, max_results=limit):
+                results.append(SearchResult(
+                    title=r.get("title", "")[:120],
+                    url=r.get("href", ""),
+                    snippet=r.get("body", "")[:400],
+                    source=_domain(r.get("href", "")),
+                    score=1.0,
+                ))
+        return results
+
+    def _sync_news(self, query: str, limit: int) -> list[SearchResult]:
+        from duckduckgo_search import DDGS  # type: ignore[import]
+
+        results: list[SearchResult] = []
+        with DDGS() as ddgs:
+            for r in ddgs.news(query, max_results=limit):
+                results.append(SearchResult(
+                    title=r.get("title", "")[:120],
+                    url=r.get("url", ""),
+                    snippet=r.get("body", "")[:400],
+                    source=_domain(r.get("url", "")),
+                    published_at=r.get("date"),
+                    score=1.0,
+                ))
+        return results

@@ -240,10 +240,31 @@ class MissionEngine:
 
         context = await self._build_context(mission)
 
+        # Resolve the active ExecutionPlan (VALIDATED or APPROVED).
+        # Never execute steps from superseded or failed plans.
+        async with self._sessions() as session:
+            plan_row = await session.execute(
+                select(ExecutionPlan)
+                .where(
+                    ExecutionPlan.mission_id == mission_id,
+                    ExecutionPlan.status.in_([
+                        ExecutionPlanStatus.VALIDATED,
+                        ExecutionPlanStatus.APPROVED,
+                    ]),
+                )
+                .order_by(ExecutionPlan.version.desc())
+                .limit(1)
+            )
+            active_plan = plan_row.scalars().first()
+
+        if active_plan is None:
+            await self._fail(mission, "No validated execution plan found")
+            raise MissionError("Cannot run mission: no validated plan")
+
         async with self._sessions() as session:
             rows = await session.execute(
                 select(MissionStep)
-                .where(MissionStep.mission_id == mission_id)
+                .where(MissionStep.execution_plan_id == active_plan.id)
                 .order_by(MissionStep.order)
             )
             steps = list(rows.scalars())

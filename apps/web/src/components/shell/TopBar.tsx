@@ -83,8 +83,8 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
               <div
                 className={cn(
                   "absolute left-0 top-full mt-1 z-dropdown",
-                  "min-w-[180px] rounded-lg border border-[var(--border-default)]",
-                  "bg-surface-overlay shadow-md animate-scale-in",
+                  "min-w-[180px] rounded-lg",
+                  "glass shadow-md animate-scale-in",
                   "py-1",
                 )}
               >

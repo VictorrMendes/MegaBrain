@@ -18,10 +18,12 @@ from .briefing import Briefing
 from .integration import ConnectedAccount, Integration, SyncRecord
 from .workspace import Workspace
 from .workspace_plugin import WorkspacePlugin
+from .workspace_session import WorkspaceSession
 
 __all__ = [
     "Base",
     "Workspace",
+    "WorkspaceSession",
     "Briefing",
     "Integration",
     "ConnectedAccount",
