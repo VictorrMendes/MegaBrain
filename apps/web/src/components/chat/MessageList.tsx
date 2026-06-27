@@ -5,11 +5,16 @@ import { SparklesIcon } from "lucide-react";
 import { ChatMessage, type ChatMessageData } from "./ChatMessage";
 
 interface MessageListProps {
-  messages:        ChatMessageData[];
-  onContextClick?: (msgId: string) => void;
+  messages:          ChatMessageData[];
+  onContextClick?:   (msgId: string) => void;
+  onShowReasoning?:  (msgId: string) => void;
 }
 
-export function MessageList({ messages, onContextClick }: MessageListProps) {
+export function MessageList({
+  messages,
+  onContextClick,
+  onShowReasoning,
+}: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -23,10 +28,12 @@ export function MessageList({ messages, onContextClick }: MessageListProps) {
           <SparklesIcon size={22} className="text-accent" />
         </div>
         <div className="text-center">
-          <p className="text-sm font-medium text-content-secondary">Intelligence Lab</p>
+          <p className="text-sm font-medium text-content-secondary">
+            Cognitive Core
+          </p>
           <p className="mt-1 text-xs text-content-muted max-w-xs">
-            Cada resposta acessa memória, conhecimento e documentos automaticamente.
-            O pipeline cognitivo é exibido em tempo real.
+            Cada resposta acessa memória, conhecimento e documentos
+            automaticamente. O pipeline cognitivo é exibido em tempo real.
           </p>
         </div>
       </div>
@@ -43,6 +50,11 @@ export function MessageList({ messages, onContextClick }: MessageListProps) {
             onContextClick={
               msg.contextUsed && onContextClick
                 ? () => onContextClick(msg.id)
+                : undefined
+            }
+            onShowReasoning={
+              msg.cognitiveData && onShowReasoning
+                ? () => onShowReasoning(msg.id)
                 : undefined
             }
           />

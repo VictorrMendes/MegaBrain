@@ -15,6 +15,7 @@ engines. Dependency direction is strictly one-way: router → orchestrator
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 from kernel.logger import get_logger
@@ -30,6 +31,7 @@ from .models import (
     OrchestratorRequest,
     OrchestratorResponse,
     RiskLevel,
+    TraceNode,
 )
 from .trace import ReasoningTrace
 
@@ -70,32 +72,48 @@ class CognitiveOrchestrator:
     # ------------------------------------------------------------------ #
 
     async def execute(
-        self, request: OrchestratorRequest
+        self,
+        request: OrchestratorRequest,
+        on_step: Callable[["TraceNode"], Awaitable[None]] | None = None,
     ) -> OrchestratorResponse:
-        """Run the full cognitive pipeline and return a rich response."""
+        """Run the full cognitive pipeline and return a rich response.
+
+        on_step, if provided, is called after each pipeline step
+        completes (or is skipped/failed). Use this for streaming UIs.
+        """
         workspace_id = UUID(request.workspace_id)
         trace = ReasoningTrace()
 
         # ── 1. Build base context ────────────────────────────────────────
         ctx = await self._build_context(request, workspace_id, trace)
+        if on_step:
+            await on_step(trace.nodes[-1])
 
         # ── 2. Decide routing ────────────────────────────────────────────
         decision = await self._decide(request, trace)
+        if on_step:
+            await on_step(trace.nodes[-1])
 
         # ── 3. Optional: web search ──────────────────────────────────────
         search_context, internet_sources = await self._maybe_search(
             request, workspace_id, decision, trace
         )
+        if on_step:
+            await on_step(trace.nodes[-1])
 
         # ── 4. Optional: create mission ──────────────────────────────────
         missions_created = await self._maybe_create_mission(
             request, workspace_id, decision, trace
         )
+        if on_step:
+            await on_step(trace.nodes[-1])
 
         # ── 5. Generate response ─────────────────────────────────────────
         response_text = await self._generate(
             request, ctx, search_context, trace
         )
+        if on_step:
+            await on_step(trace.nodes[-1])
 
         # ── 6. Learn ─────────────────────────────────────────────────────
         learning_actions = await self._maybe_learn(
@@ -107,6 +125,8 @@ class CognitiveOrchestrator:
             workspace_id,
             trace,
         )
+        if on_step:
+            await on_step(trace.nodes[-1])
 
         return OrchestratorResponse(
             response=response_text,

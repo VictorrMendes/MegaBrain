@@ -429,6 +429,76 @@ export interface BriefingResponse {
   created_at: string;
 }
 
+// ── Orchestrator (Cognitive Core) ────────────────────────────────────────────
+
+export interface OrchestratorDecision {
+  need_memory: boolean;
+  need_knowledge: boolean;
+  need_search: boolean;
+  need_integrations: boolean;
+  need_planner: boolean;
+  need_mission: boolean;
+  need_execution: boolean;
+  need_confirmation: boolean;
+  need_learning: boolean;
+  risk_level: "low" | "medium" | "high" | "critical";
+  confidence: number;
+  reason: string;
+}
+
+export interface OrchestratorTraceStep {
+  id: string;
+  step: string;
+  engine: string;
+  reason: string;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  status: "completed" | "skipped" | "failed" | "running";
+  output_summary: string | null;
+}
+
+export interface OrchestratorLearningAction {
+  type: string;
+  content: string;
+  confidence: number;
+  reason: string;
+}
+
+export interface OrchestratorResponse {
+  response: string;
+  decision: OrchestratorDecision;
+  trace: OrchestratorTraceStep[];
+  confidence: number;
+  risk: string;
+  sources: string[];
+  capabilities_used: string[];
+  missions_created: string[];
+  learning_actions: OrchestratorLearningAction[];
+  thinking_steps: string[];
+  memory_used: number;
+  knowledge_used: number;
+  internet_sources: number;
+  integrations_used: string[];
+  planner_used: boolean;
+  mission_created: boolean;
+  estimated_cost: number;
+  estimated_time: number;
+  approval_required: boolean;
+}
+
+export type CognitiveStreamEvent =
+  | {
+      event: "trace_step";
+      step: string;
+      engine: string;
+      status: "completed" | "skipped" | "failed";
+      output: string | null;
+      duration_ms: number | null;
+    }
+  | { event: "done"; response: OrchestratorResponse }
+  | { event: "error"; message: string };
+
 // Obsidian types
 export interface ObsidianNoteInput {
   path: string;
@@ -727,6 +797,63 @@ export const api = {
     get<BriefingResponse[]>(`/briefings/${wsId}?limit=${limit}`),
   getBriefing: (wsId: string, briefingId: string) =>
     get<BriefingResponse>(`/briefings/${wsId}/${briefingId}`),
+
+  // ── Orchestrator ──────────────────────────────────────────────────────
+  executeOrchestrator: (wsId: string, message: string, conversationId?: string) =>
+    post<OrchestratorResponse>(`/orchestrator/${wsId}/execute`, {
+      message,
+      conversation_id: conversationId ?? null,
+    }),
+
+  async streamOrchestratorExecute(
+    wsId: string,
+    message: string,
+    conversationId: string | null,
+    onEvent: (e: CognitiveStreamEvent) => void,
+    onError: (err: Error) => void,
+  ): Promise<void> {
+    let res: Response;
+    try {
+      res = await fetch(`${API_URL}/orchestrator/${wsId}/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          conversation_id: conversationId,
+        }),
+      });
+    } catch (e) {
+      onError(e instanceof Error ? e : new Error("Network error"));
+      return;
+    }
+    if (!res.ok) { onError(new Error(`HTTP ${res.status}`)); return; }
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (!raw) continue;
+          try {
+            const payload = JSON.parse(raw) as CognitiveStreamEvent;
+            onEvent(payload);
+          } catch { /* ignore malformed */ }
+        }
+      }
+    } catch (e) {
+      onError(e instanceof Error ? e : new Error("Stream error"));
+    }
+  },
 
   // ── Obsidian ──────────────────────────────────────────────────────────
   syncObsidian: (wsId: string, notes: ObsidianNoteInput[]) =>

@@ -1,18 +1,19 @@
-"""POST /orchestrator/{workspace_id}/execute
+"""POST /orchestrator/{workspace_id}/execute  (full response)
+POST /orchestrator/{workspace_id}/stream    (SSE — trace steps in real time)
 
-Runs the full cognitive pipeline and returns a rich response that
-exposes how Khonshu thought: decision, reasoning trace, learning
-actions, missions created, and confidence metrics.
-
-Designed for frontend flows where transparency matters — the chat
-streaming endpoint (/messages/stream) remains the primary interactive
-interface; this endpoint is the "thinking aloud" interface.
+The streaming endpoint emits one SSE event per pipeline step as it
+completes, then a final "done" event carrying the full response JSON.
+This lets the frontend show cognitive steps as they happen, not all
+at once after the full round-trip.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from core.dependencies import get_orchestrator
 from kernel.orchestrator import CognitiveOrchestrator, OrchestratorRequest
@@ -89,6 +90,10 @@ def _to_response(orch_resp) -> ExecuteResponse:
     )
 
 
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
 @router.post(
     "/{workspace_id}/execute",
     response_model=ExecuteResponse,
@@ -114,3 +119,83 @@ async def execute(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     return _to_response(result)
+
+
+@router.post("/{workspace_id}/stream")
+async def stream(
+    workspace_id: UUID,
+    body: ExecuteRequest,
+    orchestrator: CognitiveOrchestrator = Depends(get_orchestrator),
+):
+    """Stream cognitive pipeline steps as SSE events, then final response.
+
+    Event shapes:
+      {"event": "trace_step", "step": str, "engine": str,
+       "status": "completed"|"skipped"|"failed",
+       "output": str|null, "duration_ms": float|null}
+      {"event": "done", "response": <ExecuteResponse JSON>}
+      {"event": "error", "message": str}
+    """
+    orch_request = OrchestratorRequest(
+        workspace_id=str(workspace_id),
+        message=body.message,
+        conversation_id=body.conversation_id,
+    )
+
+    async def event_generator():
+        queue: asyncio.Queue = asyncio.Queue()
+
+        async def on_step(node) -> None:
+            await queue.put(node)
+
+        task = asyncio.create_task(
+            orchestrator.execute(orch_request, on_step=on_step)
+        )
+
+        try:
+            while not task.done():
+                try:
+                    node = await asyncio.wait_for(
+                        queue.get(), timeout=0.05
+                    )
+                    yield _sse({
+                        "event": "trace_step",
+                        "step": node.step,
+                        "engine": node.engine,
+                        "status": node.status.value,
+                        "output": node.output_summary,
+                        "duration_ms": node.duration_ms,
+                    })
+                except asyncio.TimeoutError:
+                    pass
+
+            # Drain any remaining steps enqueued before task finished
+            while not queue.empty():
+                node = queue.get_nowait()
+                yield _sse({
+                    "event": "trace_step",
+                    "step": node.step,
+                    "engine": node.engine,
+                    "status": node.status.value,
+                    "output": node.output_summary,
+                    "duration_ms": node.duration_ms,
+                })
+
+            result = task.result()
+            resp = _to_response(result)
+            yield _sse({
+                "event": "done",
+                "response": resp.model_dump(),
+            })
+
+        except Exception as exc:
+            yield _sse({"event": "error", "message": str(exc)})
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

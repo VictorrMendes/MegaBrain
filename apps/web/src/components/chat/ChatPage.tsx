@@ -15,9 +15,9 @@ import {
 import {
   api,
   type AvailablePlugin,
+  type CognitiveStreamEvent,
   type Conversation,
   type Document,
-  type StreamEvent,
   type WorkspacePlugin,
 } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -25,8 +25,9 @@ import { Dialog, DialogContent, DialogFooter, Input, Spinner } from "@/component
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
-import { ContextPanel, type ContextPanelCapability } from "./ContextPanel";
-import type { ChatMessageData, ContextUsed } from "./ChatMessage";
+import { ContextPanel, type ContextPanelData } from "./ContextPanel";
+import { ReasoningPanel } from "./ReasoningPanel";
+import type { ChatMessageData, LiveTraceStep, CognitiveData } from "./ChatMessage";
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -82,6 +83,10 @@ type ConfigModal = {
   existing: WorkspacePlugin | null;
 };
 
+type SidePanel =
+  | { type: "context"; msgId: string; data: ContextPanelData }
+  | { type: "reasoning"; msgId: string; data: CognitiveData };
+
 // ─────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────
@@ -102,8 +107,7 @@ export function ChatPage() {
   const [configModal,      setConfigModal]      = useState<ConfigModal | null>(null);
   const [configValues,     setConfigValues]     = useState<Record<string, string>>({});
 
-  // Context panel
-  const [activeContextMsgId, setActiveContextMsgId] = useState<string | null>(null);
+  const [sidePanel,        setSidePanel]        = useState<SidePanel | null>(null);
 
   const fileInputRef   = useRef<HTMLInputElement>(null);
   const streamingIdRef = useRef<string | null>(null);
@@ -114,7 +118,7 @@ export function ChatPage() {
     setConversations([]);
     setMessages([]);
     setActiveConvId(null);
-    setActiveContextMsgId(null);
+    setSidePanel(null);
 
     (async () => {
       const [convs, docs, available, wPlugins] = await Promise.all([
@@ -137,7 +141,7 @@ export function ChatPage() {
   // ─── load conversation ───
   async function loadConversation(workspaceId: string, conversationId: string) {
     setActiveConvId(conversationId);
-    setActiveContextMsgId(null);
+    setSidePanel(null);
     const msgs = await api.getMessages(workspaceId, conversationId);
     setMessages(
       msgs
@@ -158,7 +162,7 @@ export function ChatPage() {
     setConversations((prev) => [conv, ...prev]);
     setActiveConvId(conv.id);
     setMessages([]);
-    setActiveContextMsgId(null);
+    setSidePanel(null);
   }
 
   // ─── document upload ───
@@ -217,7 +221,7 @@ export function ChatPage() {
     setWorkspacePlugins((prev) => prev.filter((p) => p.id !== wp.id));
   }
 
-  // ─── send message ───
+  // ─── send message (cognitive streaming) ───
   const handleSend = useCallback(
     async (content: string) => {
       if (!workspace || isStreaming) return;
@@ -239,82 +243,103 @@ export function ChatPage() {
         role:        "assistant",
         content:     "",
         streaming:   true,
-        streamPhase: "thinking",
+        streamPhase: "routing",
+        liveSteps:   [],
       };
 
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setIsStreaming(true);
-      // Close context panel while user waits
-      setActiveContextMsgId(null);
+      setSidePanel(null);
 
-      let capturedContext: ContextUsed | undefined;
-
-      await api.streamMessage(
+      await api.streamOrchestratorExecute(
         workspace.id,
-        conversationId,
         content,
-        (evt: StreamEvent) => {
-          if (evt.event === "thinking") {
+        conversationId,
+        (evt: CognitiveStreamEvent) => {
+          if (evt.event === "trace_step") {
+            const step: LiveTraceStep = {
+              step:        evt.step,
+              engine:      evt.engine,
+              status:      evt.status,
+              output:      evt.output,
+              duration_ms: evt.duration_ms,
+            };
+
+            // Map orchestrator step → streamPhase for "what's next" indicator
+            const nextPhase: Record<string, ChatMessageData["streamPhase"]> = {
+              build_context:  "routing",
+              decide:         "searching",
+              search:         "generating",
+              create_mission: "generating",
+              generate:       "learning",
+              learn:          null,
+            };
+
             setMessages((prev) =>
-              prev.map((m) =>
-                m.id === streamingId ? { ...m, streamPhase: "thinking" } : m,
-              ),
+              prev.map((m) => {
+                if (m.id !== streamingId) return m;
+                return {
+                  ...m,
+                  streamPhase: nextPhase[evt.step] ?? null,
+                  liveSteps:   [...(m.liveSteps ?? []), step],
+                };
+              }),
             );
-          } else if (evt.event === "reading_memory") {
-            capturedContext = {
-              memory:    evt.memory,
-              knowledge: evt.knowledge,
-              chunks:    evt.chunks,
+          } else if (evt.event === "done") {
+            const r = evt.response;
+            const cognitiveData: CognitiveData = {
+              confidence:       r.confidence,
+              risk:             r.risk,
+              memory_used:      r.memory_used,
+              knowledge_used:   r.knowledge_used,
+              internet_sources: r.internet_sources,
+              missions_created: r.missions_created,
+              decision:         r.decision,
+              trace:            r.trace,
+              thinking_steps:   r.thinking_steps,
+              estimated_time:   r.estimated_time,
+              learning_actions: r.learning_actions.length,
             };
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === streamingId
-                  ? { ...m, streamPhase: "reading", contextUsed: capturedContext }
+                  ? {
+                      ...m,
+                      content:       r.response,
+                      streaming:     false,
+                      streamPhase:   null,
+                      cognitiveData,
+                    }
                   : m,
               ),
             );
-          } else if (evt.event === "text") {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === streamingId
-                  ? { ...m, content: m.content + evt.content, streamPhase: "writing" }
-                  : m,
-              ),
-            );
+            setIsStreaming(false);
           } else if (evt.event === "error") {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === streamingId
-                  ? { ...m, content: `Erro: ${evt.message}`, streaming: false, streamPhase: null }
+                  ? {
+                      ...m,
+                      content:     `Erro: ${evt.message}`,
+                      streaming:   false,
+                      streamPhase: null,
+                    }
                   : m,
               ),
             );
             setIsStreaming(false);
           }
         },
-        () => {
-          // done
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === streamingId
-                ? { ...m, streaming: false, streamPhase: null, contextUsed: capturedContext }
-                : m,
-            ),
-          );
-          setIsStreaming(false);
-          // Auto-open context panel if there's context
-          if (
-            capturedContext &&
-            (capturedContext.memory > 0 || capturedContext.knowledge > 0 || capturedContext.chunks > 0)
-          ) {
-            setActiveContextMsgId(streamingId);
-          }
-        },
         (err) => {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === streamingId
-                ? { ...m, content: `Erro: ${err.message}`, streaming: false, streamPhase: null }
+                ? {
+                    ...m,
+                    content:     `Erro: ${err.message}`,
+                    streaming:   false,
+                    streamPhase: null,
+                  }
                 : m,
             ),
           );
@@ -325,18 +350,32 @@ export function ChatPage() {
     [workspace, activeConvId, isStreaming],
   );
 
-  // ─── context panel ───
-  const activeContextMsg = messages.find((m) => m.id === activeContextMsgId);
-  const showContextPanel = Boolean(activeContextMsg?.contextUsed);
+  // ─── side panel helpers ───
+  function openReasoningPanel(msgId: string) {
+    const msg = messages.find((m) => m.id === msgId);
+    if (!msg?.cognitiveData) return;
+    setSidePanel(
+      sidePanel?.type === "reasoning" && sidePanel.msgId === msgId
+        ? null
+        : { type: "reasoning", msgId, data: msg.cognitiveData },
+    );
+  }
 
-  const capabilities: ContextPanelCapability[] = availablePlugins.map((ap) => {
-    const wp = workspacePlugins.find((p) => p.plugin_name === ap.name);
-    return {
-      name:        PLUGIN_LABELS[ap.name] ?? ap.name,
-      description: ap.description,
-      enabled:     wp?.is_enabled ?? false,
+  function openContextPanel(msgId: string) {
+    const msg = messages.find((m) => m.id === msgId);
+    if (!msg?.cognitiveData) return;
+    const data: ContextPanelData = {
+      memory_used:      msg.cognitiveData.memory_used,
+      knowledge_used:   msg.cognitiveData.knowledge_used,
+      internet_sources: msg.cognitiveData.internet_sources,
+      missions_created: msg.cognitiveData.missions_created,
     };
-  });
+    setSidePanel(
+      sidePanel?.type === "context" && sidePanel.msgId === msgId
+        ? null
+        : { type: "context", msgId, data },
+    );
+  }
 
   // ─── loading state ───
   if (wsLoading) {
@@ -436,8 +475,8 @@ export function ChatPage() {
                     size={11}
                     className={cn(
                       "shrink-0",
-                      doc.status === "ready"  && "text-status-success",
-                      doc.status === "failed" && "text-status-error",
+                      doc.status === "ready"      && "text-status-success",
+                      doc.status === "failed"     && "text-status-error",
                       doc.status === "processing" && "text-content-muted",
                     )}
                   />
@@ -530,35 +569,48 @@ export function ChatPage() {
           </span>
           <div className="flex items-center gap-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-2 py-1">
             <FlaskConicalIcon size={10} className="text-accent" />
-            <span className="text-[10px] font-medium text-content-muted">Intelligence Lab</span>
+            <span className="text-[10px] font-medium text-content-muted">Cognitive Core</span>
           </div>
         </header>
 
         <MessageList
           messages={messages}
-          onContextClick={(msgId) =>
-            setActiveContextMsgId((prev) => (prev === msgId ? null : msgId))
-          }
+          onContextClick={(msgId) => openContextPanel(msgId)}
+          onShowReasoning={(msgId) => openReasoningPanel(msgId)}
         />
 
         <ChatInput onSend={handleSend} disabled={isStreaming} streaming={isStreaming} />
       </main>
 
-      {/* ── Context panel ── */}
-      {showContextPanel && activeContextMsg?.contextUsed && (
+      {/* ── Side panel ── */}
+      {sidePanel?.type === "reasoning" && (
+        <ReasoningPanel
+          data={sidePanel.data}
+          onClose={() => setSidePanel(null)}
+        />
+      )}
+      {sidePanel?.type === "context" && (
         <ContextPanel
-          context={activeContextMsg.contextUsed}
-          capabilities={capabilities}
-          onClose={() => setActiveContextMsgId(null)}
+          data={sidePanel.data}
+          onClose={() => setSidePanel(null)}
         />
       )}
 
       {/* ── Plugin config modal ── */}
-      <Dialog open={Boolean(configModal)} onOpenChange={(open) => !open && setConfigModal(null)}>
-        <DialogContent size="sm" title={PLUGIN_LABELS[configModal?.plugin.name ?? ""] ?? configModal?.plugin.name ?? ""} onClose={() => setConfigModal(null)}>
+      <Dialog
+        open={Boolean(configModal)}
+        onOpenChange={(open) => !open && setConfigModal(null)}
+      >
+        <DialogContent
+          size="sm"
+          title={PLUGIN_LABELS[configModal?.plugin.name ?? ""] ?? configModal?.plugin.name ?? ""}
+          onClose={() => setConfigModal(null)}
+        >
           {configModal && (
             <>
-              <p className="mb-4 text-xs text-content-muted">{configModal.plugin.description}</p>
+              <p className="mb-4 text-xs text-content-muted">
+                {configModal.plugin.description}
+              </p>
 
               <div className="space-y-3">
                 {(PLUGIN_CONFIG_FIELDS[configModal.plugin.name] ?? []).map((field) => (
@@ -569,14 +621,19 @@ export function ChatPage() {
                     <Input
                       value={configValues[field.key] ?? ""}
                       onChange={(e) =>
-                        setConfigValues((prev) => ({ ...prev, [field.key]: e.target.value }))
+                        setConfigValues((prev) => ({
+                          ...prev,
+                          [field.key]: e.target.value,
+                        }))
                       }
                       placeholder={field.placeholder}
                     />
                   </div>
                 ))}
                 {(PLUGIN_CONFIG_FIELDS[configModal.plugin.name] ?? []).length === 0 && (
-                  <p className="text-xs text-content-muted">Nenhuma configuração necessária.</p>
+                  <p className="text-xs text-content-muted">
+                    Nenhuma configuração necessária.
+                  </p>
                 )}
               </div>
 

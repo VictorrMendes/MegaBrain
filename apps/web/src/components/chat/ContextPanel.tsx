@@ -8,33 +8,42 @@ import {
   BotIcon,
   BrainIcon,
   FileTextIcon,
+  GlobeIcon,
   InfoIcon,
-  PlugZapIcon,
+  RocketIcon,
   XIcon,
 } from "lucide-react";
-import type { ContextUsed } from "./ChatMessage";
 
 // ─────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────
 
-export interface ContextPanelCapability {
-  name:        string;
-  description: string;
-  enabled:     boolean;
+export interface ContextPanelData {
+  memory_used:      number;
+  knowledge_used:   number;
+  internet_sources: number;
+  missions_created: string[];
+  chunks?:          number;
 }
 
 interface ContextPanelProps {
-  context:       ContextUsed;
-  capabilities?: ContextPanelCapability[];
-  onClose?:      () => void;
+  data:     ContextPanelData;
+  onClose?: () => void;
 }
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────
 
-function SectionHeader({ icon, label, count }: { icon: React.ReactNode; label: string; count?: number }) {
+function SectionHeader({
+  icon,
+  label,
+  count,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  count?: number;
+}) {
   return (
     <div className="flex items-center gap-1.5 px-4 pt-3 pb-1">
       <span className="text-content-muted">{icon}</span>
@@ -50,7 +59,15 @@ function SectionHeader({ icon, label, count }: { icon: React.ReactNode; label: s
   );
 }
 
-function ContextRow({ href, label, sublabel }: { href: string; label: string; sublabel: string }) {
+function ContextRow({
+  href,
+  label,
+  sublabel,
+}: {
+  href: string;
+  label: string;
+  sublabel: string;
+}) {
   return (
     <Link
       href={href}
@@ -64,30 +81,13 @@ function ContextRow({ href, label, sublabel }: { href: string; label: string; su
   );
 }
 
-function CapabilityPill({ cap }: { cap: ContextPanelCapability }) {
-  return (
-    <div
-      className={cn(
-        "mx-4 flex items-center gap-1.5 rounded-md border px-2 py-1.5",
-        cap.enabled
-          ? "border-[var(--border-default)] bg-[var(--surface-raised)]"
-          : "border-[var(--border-subtle)] bg-transparent opacity-40",
-      )}
-      title={cap.description}
-    >
-      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", cap.enabled ? "bg-status-success" : "bg-content-muted")} />
-      <span className="truncate text-[11px] text-content-secondary">{cap.name}</span>
-    </div>
-  );
-}
-
 // ─────────────────────────────────────────────────────────────
 // ContextPanel
 // ─────────────────────────────────────────────────────────────
 
-export function ContextPanel({ context, capabilities, onClose }: ContextPanelProps) {
-  const total   = context.memory + context.knowledge + context.chunks;
-  const hasCaps = capabilities && capabilities.length > 0;
+export function ContextPanel({ data, onClose }: ContextPanelProps) {
+  const total = data.memory_used + data.knowledge_used +
+    (data.chunks ?? 0) + data.internet_sources;
 
   return (
     <aside
@@ -106,7 +106,10 @@ export function ContextPanel({ context, capabilities, onClose }: ContextPanelPro
           </span>
         </div>
         {onClose && (
-          <button onClick={onClose} className="text-content-muted hover:text-content-secondary transition-colors">
+          <button
+            onClick={onClose}
+            className="text-content-muted hover:text-content-secondary transition-colors"
+          >
             <XIcon size={12} />
           </button>
         )}
@@ -122,7 +125,7 @@ export function ContextPanel({ context, capabilities, onClose }: ContextPanelPro
               {total} fonte{total !== 1 ? "s" : ""} consultada{total !== 1 ? "s" : ""}
             </p>
             <p className="mt-0.5 text-[11px] text-content-muted leading-snug">
-              Resposta enriquecida com memória, conhecimento e documentos relevantes.
+              Resposta enriquecida com memória, conhecimento e informações relevantes.
             </p>
           </div>
         ) : (
@@ -135,54 +138,90 @@ export function ContextPanel({ context, capabilities, onClose }: ContextPanelPro
         )}
 
         {/* Memory */}
-        {context.memory > 0 && (
+        {data.memory_used > 0 && (
           <>
             <Separator />
-            <SectionHeader icon={<BrainIcon size={11} />} label="Memória" count={context.memory} />
+            <SectionHeader
+              icon={<BrainIcon size={11} />}
+              label="Memória"
+              count={data.memory_used}
+            />
             <ContextRow
               href="/memory"
-              label={`${context.memory} registro${context.memory !== 1 ? "s" : ""} consultado${context.memory !== 1 ? "s" : ""}`}
+              label={`${data.memory_used} registro${data.memory_used !== 1 ? "s" : ""} consultado${data.memory_used !== 1 ? "s" : ""}`}
               sublabel="Experiências e contexto pessoal"
             />
           </>
         )}
 
         {/* Knowledge */}
-        {context.knowledge > 0 && (
+        {data.knowledge_used > 0 && (
           <>
             <Separator />
-            <SectionHeader icon={<BookOpenIcon size={11} />} label="Conhecimento" count={context.knowledge} />
+            <SectionHeader
+              icon={<BookOpenIcon size={11} />}
+              label="Conhecimento"
+              count={data.knowledge_used}
+            />
             <ContextRow
               href="/knowledge"
-              label={`${context.knowledge} fato${context.knowledge !== 1 ? "s" : ""} recuperado${context.knowledge !== 1 ? "s" : ""}`}
+              label={`${data.knowledge_used} fato${data.knowledge_used !== 1 ? "s" : ""} recuperado${data.knowledge_used !== 1 ? "s" : ""}`}
               sublabel="Fatos estruturados e informações"
             />
           </>
         )}
 
         {/* Documents */}
-        {context.chunks > 0 && (
+        {(data.chunks ?? 0) > 0 && (
           <>
             <Separator />
-            <SectionHeader icon={<FileTextIcon size={11} />} label="Documentos" count={context.chunks} />
+            <SectionHeader
+              icon={<FileTextIcon size={11} />}
+              label="Documentos"
+              count={data.chunks}
+            />
             <ContextRow
               href="/knowledge"
-              label={`${context.chunks} trecho${context.chunks !== 1 ? "s" : ""} recuperado${context.chunks !== 1 ? "s" : ""}`}
+              label={`${data.chunks} trecho${data.chunks !== 1 ? "s" : ""} recuperado${data.chunks !== 1 ? "s" : ""}`}
               sublabel="Fragmentos de documentos indexados"
             />
           </>
         )}
 
-        {/* Capabilities */}
-        {hasCaps && (
+        {/* Internet */}
+        {data.internet_sources > 0 && (
           <>
             <Separator />
-            <SectionHeader icon={<PlugZapIcon size={11} />} label="Capacidades" />
-            <div className="flex flex-col gap-1 py-2">
-              {capabilities!.map((cap) => (
-                <CapabilityPill key={cap.name} cap={cap} />
-              ))}
-            </div>
+            <SectionHeader
+              icon={<GlobeIcon size={11} />}
+              label="Internet"
+              count={data.internet_sources}
+            />
+            <ContextRow
+              href="/knowledge"
+              label={`${data.internet_sources} resultado${data.internet_sources !== 1 ? "s" : ""} encontrado${data.internet_sources !== 1 ? "s" : ""}`}
+              sublabel="Pesquisa em tempo real na web"
+            />
+          </>
+        )}
+
+        {/* Missions */}
+        {data.missions_created.length > 0 && (
+          <>
+            <Separator />
+            <SectionHeader
+              icon={<RocketIcon size={11} />}
+              label="Missões criadas"
+              count={data.missions_created.length}
+            />
+            {data.missions_created.map((id) => (
+              <ContextRow
+                key={id}
+                href="/missions"
+                label={`Missão ${id.slice(0, 8)}…`}
+                sublabel="Tarefa autônoma criada por esta requisição"
+              />
+            ))}
           </>
         )}
       </div>
