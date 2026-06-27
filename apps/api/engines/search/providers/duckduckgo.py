@@ -106,7 +106,7 @@ class DuckDuckGoProvider(SearchProvider):
 
         results: list[SearchResult] = []
         
-        async with httpx.AsyncClient(http2=True, timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             res = await client.post(url, headers=headers, data=data)
             res.raise_for_status()
             
