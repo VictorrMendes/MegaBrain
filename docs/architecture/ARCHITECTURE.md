@@ -1,8 +1,8 @@
 # PAIOS — Architecture Reference
 
 **Status:** Living Document  
-**Version:** 2.0  
-**Last updated:** 2026-06-25
+**Version:** 2.1  
+**Last updated:** 2026-06-27
 
 ---
 
@@ -68,9 +68,14 @@ apps/api/
 │   ├── config/             — Settings via env vars (pydantic-settings)
 │   ├── logger/             — Structured JSON logging (structlog)
 │   ├── events/             — EventBus + KhonshuEvent envelope
-│   ├── capabilities/       — CapabilityRegistry (semantic)
+│   ├── capabilities/       — CapabilityRegistry + CapabilityReasoner
+│   ├── context/            — ContextBuilder (single source of system prompts)
+│   ├── orchestrator/       — CognitiveOrchestrator + DecisionEngine + LearningEngine
+│   ├── observability/      — CognitiveMetrics (in-memory telemetry)
+│   ├── cognitive_loop.py   — Proactive 30-min agent loop
+│   ├── life_context.py     — Digital ecosystem snapshot from integrations
 │   ├── permissions/        — Permission engine per workspace
-│   ├── plugins/            — 6 built-in plugins (ntfy, weather, search, HA, Notion, GCal)
+│   ├── plugins/            — Built-in plugins (ntfy, weather, search, HA, Notion, GCal)
 │   ├── providers/          — OllamaProvider (LLM + embeddings)
 │   └── agents/             — Background workers (memory, task, summarizer)
 │
@@ -78,6 +83,13 @@ apps/api/
 │   ├── memory/             — MemoryEngine (RRF recall, remember, supersede)
 │   ├── mission/            — MissionEngine (state machine, lifecycle)
 │   ├── plan/               — PlanProvider interface + LLM + Workflow implementations
+│   ├── knowledge/          — KnowledgeEngine (facts, observations, entities)
+│   ├── search/             — SearchEngine + DuckDuckGo provider
+│   ├── briefing/           — BriefingEngine (LLM-generated daily summaries)
+│   ├── integration/        — IntegrationManager + providers + IntegrationIntelligence
+│   ├── execution/          — StepExecutor (capability tool execution)
+│   ├── inbox/              — InboxEngine (routing, classification)
+│   ├── scheduler/          — SchedulerEngine (cron, event, rule triggers)
 │   ├── prompt/             — PromptEngine (dynamic system prompt)
 │   ├── rag/                — RAGEngine (ingest, retrieve, fallback)
 │   ├── plugin/             — PluginEngine (enable/disable per workspace)

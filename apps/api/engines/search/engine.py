@@ -140,16 +140,16 @@ class SearchEngine:
         try:
             for r in results[:3]:
                 statement = f"[web:{provider_slug}] {r.title}: {r.snippet}"
-                await self._knowledge.add_fact(
+                await self._knowledge.store_fact(
                     workspace_id=workspace_id,
                     statement=statement[:500],
                     source_type="web_search",
                     confidence=0.6,
-                    derived_from=query,
                 )
         except Exception as exc:
             logger.warning(
-                "search_engine.knowledge_store_failed", error=str(exc)
+                "search_engine.knowledge_store_failed",
+                error=str(exc),
             )
 
     # ------------------------------------------------------------------ #

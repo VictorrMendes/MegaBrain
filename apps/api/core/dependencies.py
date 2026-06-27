@@ -73,3 +73,15 @@ def get_capability_reasoner():
 
 def get_cognitive_metrics():
     return runtime.metrics
+
+
+def get_orchestrator():
+    return runtime.orchestrator
+
+
+def get_decision_engine():
+    return runtime.decision_engine
+
+
+def get_learning_engine():
+    return runtime.learning_engine

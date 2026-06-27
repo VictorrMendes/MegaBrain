@@ -24,6 +24,11 @@ from kernel.health import ComponentHealth, HealthReport
 from kernel.life_context import LifeContextProvider
 from kernel.logger import get_logger
 from kernel.observability import CognitiveMetrics
+from kernel.orchestrator import (
+    CognitiveOrchestrator,
+    DecisionEngine,
+    LearningEngine,
+)
 from kernel.providers.ollama import OllamaProvider
 
 logger = get_logger(__name__)
@@ -58,6 +63,9 @@ class KhonshuRuntime:
         self._context: ContextBuilder | None = None
         self._reasoner: CapabilityReasoner | None = None
         self._metrics: CognitiveMetrics | None = None
+        self._decision_engine: DecisionEngine | None = None
+        self._learning_engine: LearningEngine | None = None
+        self._orchestrator: CognitiveOrchestrator | None = None
 
     def start(self) -> None:
         logger.info("runtime.starting")
@@ -137,6 +145,23 @@ class KhonshuRuntime:
             knowledge_engine=self._knowledge,
             life_context=self._life_context,
         )
+        self._decision_engine = DecisionEngine(
+            llm_provider=self._llm,
+        )
+        self._learning_engine = LearningEngine(
+            llm_provider=self._llm,
+        )
+        self._orchestrator = CognitiveOrchestrator(
+            context_builder=self._context,
+            decision_engine=self._decision_engine,
+            learning_engine=self._learning_engine,
+            llm_provider=self._llm,
+            memory_engine=self._memory,
+            knowledge_engine=self._knowledge,
+            search_engine=self._search,
+            mission_engine=self._mission,
+            metrics=self._metrics,
+        )
 
         # Event subscriptions
         self._knowledge.subscribe_to_events()
@@ -152,6 +177,7 @@ class KhonshuRuntime:
                 "scheduler", "inbox", "search", "integration",
                 "integration_intel", "life_context", "briefing",
                 "cognitive_loop", "metrics",
+                "decision_engine", "learning_engine", "orchestrator",
             ],
         )
 
@@ -279,6 +305,21 @@ class KhonshuRuntime:
     def metrics(self) -> CognitiveMetrics:
         assert self._metrics is not None, "Runtime not started"
         return self._metrics
+
+    @property
+    def decision_engine(self) -> DecisionEngine:
+        assert self._decision_engine is not None, "Runtime not started"
+        return self._decision_engine
+
+    @property
+    def learning_engine(self) -> LearningEngine:
+        assert self._learning_engine is not None, "Runtime not started"
+        return self._learning_engine
+
+    @property
+    def orchestrator(self) -> CognitiveOrchestrator:
+        assert self._orchestrator is not None, "Runtime not started"
+        return self._orchestrator
 
 
 # Global singleton — start() called in main.py lifespan
