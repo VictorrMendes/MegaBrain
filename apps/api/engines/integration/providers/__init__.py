@@ -1,5 +1,12 @@
 # Import all providers here so they self-register via @IntegrationRegistry.register
-from engines.integration.providers.docker import DockerProvider
-from engines.integration.providers.weather import WeatherProvider
+from .docker import DockerProvider
+from .weather import WeatherProvider
+from .mock_provider import MockProvider
+from .google_workspace import GoogleWorkspaceProvider
 
-__all__ = ["DockerProvider", "WeatherProvider"]
+__all__ = [
+    "DockerProvider",
+    "WeatherProvider", 
+    "MockProvider",
+    "GoogleWorkspaceProvider"
+]

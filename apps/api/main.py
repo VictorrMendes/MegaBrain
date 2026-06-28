@@ -17,8 +17,10 @@ from kernel.events import event_bus
 from kernel.logger import get_logger, setup_logging
 from kernel.runtime import runtime
 from routers.artifacts import router as artifacts_router
-from routers.briefings import router as briefings_router
 from routers.integrations import router as integrations_router
+from routers.admin import router as admin_router
+from routers.oauth import router as oauth_router
+from routers.briefings import router as briefings_router
 from routers.orchestrator import router as orchestrator_router
 from routers.conversations import router as conversations_router
 from routers.dashboard import router as dashboard_router
@@ -153,3 +155,6 @@ app.include_router(search_router)
 app.include_router(integrations_router)
 app.include_router(briefings_router)
 app.include_router(orchestrator_router)
+app.include_router(admin_router)
+app.include_router(oauth_router)
+

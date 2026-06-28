@@ -60,6 +60,8 @@ class Capability:
     risk_level: RiskLevel = RiskLevel.low
     estimated_latency_ms: int = 0    # 0 = desconhecido
     estimated_cost_units: int = 0    # 0 = sem custo
+    mutability: str = "READ"         # READ, WRITE, DELETE
+    cache_policy: str = "REALTIME"   # REALTIME, POLLING, CACHE, BACKGROUND
     side_effects: list[str] = field(default_factory=list)
 
     # Scheduling & reliability metadata (ADR-008)
@@ -97,6 +99,8 @@ class Capability:
             "risk_level": self.risk_level.value,
             "estimated_latency_ms": self.estimated_latency_ms,
             "estimated_cost_units": self.estimated_cost_units,
+            "mutability": self.mutability,
+            "cache_policy": self.cache_policy,
             "side_effects": self.side_effects,
             "permissions": self.permissions,
             "required_context": self.required_context,

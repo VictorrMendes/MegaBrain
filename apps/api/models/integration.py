@@ -296,3 +296,32 @@ class SyncRecord(Base):
     account: Mapped[ConnectedAccount | None] = relationship(
         "ConnectedAccount", back_populates="sync_records"
     )
+
+class IntegrationSecret(Base):
+    """Encrypted secrets (e.g. Client ID, Client Secret, API Keys) managed via System Settings.
+    These are encrypted by the TokenManager using the MASTER_KEY.
+    """
+
+    __tablename__ = "integration_secrets"
+
+    id: Mapped[UUID] = mapped_column(
+        sa.UUID(), primary_key=True, default=uuid4
+    )
+    provider: Mapped[str] = mapped_column(
+        sa.Text(), nullable=False, index=True, unique=True
+    )
+    # Encrypted JSON payload containing client_id, client_secret, etc.
+    encrypted_payload: Mapped[str] = mapped_column(
+        sa.Text(), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.text("now()"),
+        nullable=False,
+    )
+

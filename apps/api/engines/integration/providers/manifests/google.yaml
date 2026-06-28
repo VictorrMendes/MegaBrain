@@ -1,0 +1,62 @@
+id: "google"
+name: "Google Workspace"
+version: "1.0.0"
+connectors:
+  - "oauth"
+capabilities:
+  - id: "calendar.list_events"
+    description: "Lista eventos futuros do Google Calendar"
+    latency_ms: 300
+    cache_policy: "REALTIME"
+    risk_level: "low"
+    mutability: "READ"
+    approval_required: false
+    side_effects: false
+  
+  - id: "calendar.get_event"
+    description: "Busca os detalhes de um evento específico"
+    latency_ms: 200
+    cache_policy: "REALTIME"
+    risk_level: "low"
+    mutability: "READ"
+    approval_required: false
+    side_effects: false
+
+  - id: "calendar.create_event"
+    description: "Cria um novo evento no Google Calendar"
+    latency_ms: 500
+    cache_policy: "REALTIME"
+    risk_level: "medium"
+    mutability: "WRITE"
+    approval_required: true
+    side_effects: true
+
+  - id: "calendar.update_event"
+    description: "Atualiza um evento existente"
+    latency_ms: 500
+    cache_policy: "REALTIME"
+    risk_level: "medium"
+    mutability: "WRITE"
+    approval_required: true
+    side_effects: true
+    
+  - id: "calendar.delete_event"
+    description: "Deleta um evento no Google Calendar"
+    latency_ms: 500
+    cache_policy: "REALTIME"
+    risk_level: "high"
+    mutability: "DELETE"
+    approval_required: true
+    side_effects: true
+
+snapshots:
+  - "calendar.today"
+
+events:
+  - "calendar.event_created"
+  - "calendar.event_updated"
+  - "calendar.event_deleted"
+
+permissions:
+  - "https://www.googleapis.com/auth/calendar.readonly"
+  - "https://www.googleapis.com/auth/calendar.events"
