@@ -198,7 +198,20 @@ class GoogleWorkspaceProvider(IntegrationProvider):
             
             num_items = len(result.get("items", []))
             log.info(f"[RC-18E] Provider execute | return object has items: {num_items}")
-            return result
+            
+            # Compress the payload to avoid exploding LLM context window
+            lean_events = []
+            for item in result.get("items", []):
+                lean_events.append({
+                    "id": item.get("id"),
+                    "summary": item.get("summary", "Sem título"),
+                    "start": item.get("start", {}).get("dateTime") or item.get("start", {}).get("date"),
+                    "end": item.get("end", {}).get("dateTime") or item.get("end", {}).get("date"),
+                    "status": item.get("status"),
+                    "link": item.get("htmlLink")
+                })
+                
+            return {"events": lean_events}
         elif capability == "calendar.get_event":
             return await connector.get_event(
                 event_id=params["event_id"],
