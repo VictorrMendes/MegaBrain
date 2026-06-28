@@ -12,7 +12,14 @@ async function proxy(req: NextRequest): Promise<Response> {
   const upstreamUrl = `${API_INTERNAL_URL}${upstreamPath}${url.search}`;
 
   const headers = new Headers(req.headers);
+  const host = headers.get("host") || "";
   headers.delete("host");
+  
+  // Pass along real client URL details to FastAPI
+  const protocol = req.nextUrl.protocol.replace(":", "");
+  headers.set("x-forwarded-proto", protocol);
+  headers.set("x-forwarded-host", host);
+  headers.set("x-forwarded-prefix", "/api");
 
   const body =
     req.method === "GET" || req.method === "HEAD" ? undefined : req.body;
@@ -21,6 +28,7 @@ async function proxy(req: NextRequest): Promise<Response> {
     method: req.method,
     headers,
     body,
+    redirect: "manual",
     // @ts-expect-error — Node fetch duplex required for streaming body
     duplex: "half",
   });

@@ -2,21 +2,23 @@
 
 import { useState, useEffect } from "react"
 import { api } from "@/lib/api"
+import { useWorkspace } from "@/context/WorkspaceContext"
 import { ToyBrick, Plus, Globe, Check, AlertCircle, ChevronRight, Activity, Zap, RefreshCw, Trash2, Settings2 } from "lucide-react"
 
 export default function IntegrationsSettingsPage() {
+  const { current: workspace } = useWorkspace()
   const [available, setAvailable] = useState<any[]>([])
   const [connected, setConnected] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetchIntegrations()
-  }, [])
+    if (workspace) {
+      fetchIntegrations(workspace.id)
+    }
+  }, [workspace?.id])
 
-  const fetchIntegrations = async () => {
+  const fetchIntegrations = async (wsId: string) => {
     try {
-      // In a real flow, we pass the workspace ID from context
-      const wsId = "00000000-0000-0000-0000-000000000000" // Replace with real later
       const [avail, conn] = await Promise.all([
         api.listAvailableIntegrations(),
         api.listIntegrations(wsId).catch(() => [])
@@ -31,9 +33,8 @@ export default function IntegrationsSettingsPage() {
   }
 
   const handleConnect = (slug: string) => {
-    const wsId = "00000000-0000-0000-0000-000000000000" // Replace with real
-    // Redirect to OAuth
-    window.location.href = `http://localhost:8000/api/integrations/oauth/connect/${wsId}/${slug}`
+    if (!workspace) return
+    window.location.href = `/api/integrations/oauth/connect/${workspace.id}/${slug}`
   }
 
   return (

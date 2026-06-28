@@ -35,8 +35,16 @@ async def connect_oauth(
     state = json.dumps({"workspace_id": str(workspace_id), "slug": slug})
     
     # Needs a redirect URI registered with the provider
-    # By default, use the request base URL to construct the callback
-    base_url = str(request.base_url).rstrip("/")
+    # Use forwarded headers if behind proxy
+    forwarded_host = request.headers.get("x-forwarded-host")
+    forwarded_proto = request.headers.get("x-forwarded-proto", "http")
+    forwarded_prefix = request.headers.get("x-forwarded-prefix", "")
+    
+    if forwarded_host:
+        base_url = f"{forwarded_proto}://{forwarded_host}{forwarded_prefix}"
+    else:
+        base_url = str(request.base_url).rstrip("/")
+        
     redirect_uri = f"{base_url}/integrations/oauth/callback"
     
     url = await oauth_provider.get_authorization_url(
@@ -74,7 +82,15 @@ async def oauth_callback(
     provider_instance = provider_cls()
     oauth_provider = provider_instance.oauth_provider
     
-    base_url = str(request.base_url).rstrip("/")
+    forwarded_host = request.headers.get("x-forwarded-host")
+    forwarded_proto = request.headers.get("x-forwarded-proto", "http")
+    forwarded_prefix = request.headers.get("x-forwarded-prefix", "")
+    
+    if forwarded_host:
+        base_url = f"{forwarded_proto}://{forwarded_host}{forwarded_prefix}"
+    else:
+        base_url = str(request.base_url).rstrip("/")
+        
     redirect_uri = f"{base_url}/integrations/oauth/callback"
     
     try:
@@ -112,4 +128,9 @@ async def oauth_callback(
     )
     
     # Redirect back to frontend
-    return RedirectResponse("http://localhost:3100/settings/integrations")
+    if forwarded_host:
+        frontend_url = f"{forwarded_proto}://{forwarded_host}/settings/integrations"
+    else:
+        frontend_url = "http://localhost:3100/settings/integrations"
+        
+    return RedirectResponse(frontend_url)
