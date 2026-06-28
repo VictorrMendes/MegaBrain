@@ -74,19 +74,62 @@ class GoogleWorkspaceProvider(IntegrationProvider):
             config=config, # Save encrypted tokens
         )
 
+    async def _ensure_valid_token(self, account: ConnectedAccount) -> str:
+        from datetime import datetime, timezone
+        from engines.integration.identity.token_manager import token_manager
+        from core.database import AsyncSessionLocal
+        
+        expires_at_str = account.config.get("token_expires_at") if account.config else None
+        refresh_token_enc = account.config.get("refresh_token_encrypted") if account.config else None
+        
+        needs_refresh = False
+        if expires_at_str and refresh_token_enc:
+            try:
+                expires_at = datetime.fromisoformat(expires_at_str)
+                if (expires_at - datetime.now(timezone.utc)).total_seconds() < 300:
+                    needs_refresh = True
+            except ValueError:
+                needs_refresh = True
+        else:
+            # If we don't have expiration but have refresh token, we'll wait for a 401
+            # But normally we always have expires_at from oauth_callback
+            pass
+            
+        if needs_refresh and refresh_token_enc:
+            refresh_token = token_manager.decrypt(refresh_token_enc)
+            async with AsyncSessionLocal() as session:
+                new_tokens = await self.oauth_provider.refresh_token(session, refresh_token)
+                
+            access_token = token_manager.encrypt(new_tokens["access_token"])
+            account.config["access_token_encrypted"] = access_token
+            
+            if "refresh_token" in new_tokens and new_tokens["refresh_token"]:
+                account.config["refresh_token_encrypted"] = token_manager.encrypt(new_tokens["refresh_token"])
+                
+            if "expires_at" in new_tokens and new_tokens["expires_at"]:
+                account.config["token_expires_at"] = new_tokens["expires_at"].isoformat()
+                
+            # Update the database
+            async with AsyncSessionLocal() as session:
+                from models.integration import ConnectedAccount as CA
+                acct = await session.get(CA, account.id)
+                if acct:
+                    acct.config = dict(account.config)
+                    await session.commit()
+                    
+        return token_manager.decrypt(account.config["access_token_encrypted"])
+
     async def sync(self, account: ConnectedAccount | None, since: datetime | None = None) -> SyncResult:
         if not account:
             return SyncResult(error_message="No active connected account found")
             
-        from engines.integration.identity.token_manager import token_manager
         from engines.integration.connectors.google_calendar import GoogleCalendarConnector
         
-        # Access token is stored encrypted in account.config
-        encrypted_token = account.config.get("access_token_encrypted") if account.config else None
-        if not encrypted_token:
-            return SyncResult(error_message="Missing access token")
+        try:
+            access_token = await self._ensure_valid_token(account)
+        except Exception as e:
+            return SyncResult(error_message=f"Failed to refresh token: {e}")
             
-        access_token = token_manager.decrypt(encrypted_token)
         connector = GoogleCalendarConnector(access_token)
         
         try:
@@ -113,15 +156,13 @@ class GoogleWorkspaceProvider(IntegrationProvider):
         if not account:
             return IntegrationHealth.unknown
             
-        from engines.integration.identity.token_manager import token_manager
         from engines.integration.connectors.google_calendar import GoogleCalendarConnector
         
-        encrypted_token = account.config.get("access_token_encrypted")
-        if not encrypted_token:
+        try:
+            access_token = await self._ensure_valid_token(account)
+            connector = GoogleCalendarConnector(access_token)
+        except Exception:
             return IntegrationHealth.unhealthy
-            
-        access_token = token_manager.decrypt(encrypted_token)
-        connector = GoogleCalendarConnector(access_token)
         
         try:
             await connector.list_events(max_results=1)
@@ -133,11 +174,13 @@ class GoogleWorkspaceProvider(IntegrationProvider):
         if not account:
             return {"error": "Account not provided"}
             
-        from engines.integration.identity.token_manager import token_manager
         from engines.integration.connectors.google_calendar import GoogleCalendarConnector
         
-        encrypted_token = account.config.get("access_token_encrypted")
-        access_token = token_manager.decrypt(encrypted_token)
+        try:
+            access_token = await self._ensure_valid_token(account)
+        except Exception as e:
+            return {"error": f"Auth failed: {e}"}
+            
         connector = GoogleCalendarConnector(access_token)
         
         if capability == "calendar.list_events":
