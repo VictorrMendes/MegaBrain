@@ -1,5 +1,5 @@
 import { SettingsSidebar } from "@/components/settings/sidebar"
-import { TopBar } from "@/components/layout/top-bar"
+import { TopBar } from "@/components/shell/TopBar"
 
 export default function SettingsLayout({
   children,
