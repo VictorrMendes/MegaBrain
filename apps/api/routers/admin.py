@@ -5,7 +5,7 @@ from sqlalchemy import select
 from pydantic import BaseModel
 import json
 
-from core.database import get_session
+from core.database import get_db
 from models.integration import IntegrationSecret
 from engines.integration.identity.token_manager import token_manager
 
@@ -16,7 +16,7 @@ class SecretPayload(BaseModel):
     payload: Dict[str, Any]
 
 @router.get("/")
-async def list_secrets(session: AsyncSession = Depends(get_session)):
+async def list_secrets(session: AsyncSession = Depends(get_db)):
     """List all registered secret providers."""
     stmt = select(IntegrationSecret.provider)
     result = await session.execute(stmt)
@@ -24,7 +24,7 @@ async def list_secrets(session: AsyncSession = Depends(get_session)):
     return {"providers": providers}
 
 @router.post("/")
-async def set_secret(secret_data: SecretPayload, session: AsyncSession = Depends(get_session)):
+async def set_secret(secret_data: SecretPayload, session: AsyncSession = Depends(get_db)):
     """Create or update a secret for a provider."""
     # Encrypt the payload using the token manager
     payload_str = json.dumps(secret_data.payload)
@@ -47,7 +47,7 @@ async def set_secret(secret_data: SecretPayload, session: AsyncSession = Depends
     return {"status": "ok", "provider": secret_data.provider}
     
 @router.delete("/{provider}")
-async def delete_secret(provider: str, session: AsyncSession = Depends(get_session)):
+async def delete_secret(provider: str, session: AsyncSession = Depends(get_db)):
     """Delete a secret for a provider."""
     stmt = select(IntegrationSecret).where(IntegrationSecret.provider == provider)
     result = await session.execute(stmt)

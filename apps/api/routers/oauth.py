@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from core.database import get_session
+from core.database import get_db
 from engines.integration.identity.oauth import BaseOAuthProvider
 from engines.integration.identity.secret_store import SecretStore
 from engines.integration.identity.token_manager import token_manager
@@ -18,7 +18,7 @@ async def connect_oauth(
     request: Request,
     workspace_id: UUID,
     slug: str,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_db)
 ):
     """Initiate the OAuth flow for a provider."""
     provider_cls = IntegrationRegistry.get(slug)
@@ -51,7 +51,7 @@ async def connect_oauth(
 async def oauth_callback(
     request: Request,
     manager: IntegrationManager = Depends(get_integration_manager),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_db)
 ):
     """Handle the OAuth callback from the provider."""
     code = request.query_params.get("code")
