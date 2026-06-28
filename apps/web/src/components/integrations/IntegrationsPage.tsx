@@ -81,6 +81,12 @@ function ConnectDialog({
 
   async function connect() {
     if (!ws) return;
+    
+    if (provider.slug === "google") {
+      window.location.href = `/api/integrations/oauth/connect/${ws.id}/${provider.slug}`;
+      return;
+    }
+    
     setSaving(true);
     setError(null);
     try {
