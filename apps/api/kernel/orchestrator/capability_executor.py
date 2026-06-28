@@ -309,13 +309,21 @@ class CapabilityExecutor:
             return f"IntegrationManager não disponível para consultar {label}."
 
         try:
+            from engines.integration.base import IntegrationRegistry
+            available = IntegrationRegistry.list_all()
+            matched_slugs = set()
+            for p in available:
+                if (slug_prefix in p["slug"].lower()
+                    or slug_prefix in p["name"].lower()
+                    or any(slug_prefix in cap for cap in p["capabilities"])):
+                    matched_slugs.add(p["slug"])
+
             integrations = await self._integrations.list_integrations(
                 workspace_id
             )
             matches = [
                 i for i in integrations
-                if slug_prefix in i.slug.lower()
-                or slug_prefix in i.name.lower()
+                if i.slug in matched_slugs
             ]
         except Exception as exc:
             logger.warning(
