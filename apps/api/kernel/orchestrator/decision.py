@@ -18,7 +18,7 @@ from kernel.providers.base import (
     LLMProvider,
 )
 
-from .models import Decision, RiskLevel
+from .models import Decision, ExecutionContext, RiskLevel
 
 logger = get_logger("khonshu.orchestrator.decision")
 
@@ -128,12 +128,12 @@ class DecisionEngine:
         self._llm = llm_provider
 
     async def decide(
-        self, message: str, context_hint: str = ""
+        self, message: str, exec_ctx: ExecutionContext | None = None
     ) -> Decision:
         """Analyze message and return routing Decision."""
         user_content = f"Message: {message}"
-        if context_hint:
-            user_content += f"\n\nContext: {context_hint[:300]}"
+        if exec_ctx:
+            user_content += f"\n\nContext:\n- Current Time: {exec_ctx.now.isoformat()}\n- Timezone: {exec_ctx.timezone}"
 
         raw_content = ""
         try:
