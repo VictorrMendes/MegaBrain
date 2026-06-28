@@ -98,6 +98,7 @@ class CognitiveOrchestrator:
         knowledge_engine=None,
         metrics=None,
         session_factory=None,
+        trace_broadcaster=None,
     ) -> None:
         self._context = context_builder
         self._decision = decision_engine
@@ -108,6 +109,7 @@ class CognitiveOrchestrator:
         self._knowledge = knowledge_engine
         self._metrics = metrics
         self._sessions = session_factory
+        self._trace_broadcaster = trace_broadcaster
         self._intent_router = IntentRouter()
 
     # ------------------------------------------------------------------ #
@@ -124,97 +126,109 @@ class CognitiveOrchestrator:
             raise ValueError("workspace_id is required")
 
         workspace_id = UUID(request.workspace_id)
-        trace = ReasoningTrace()
-
-        # ── 0. Create Execution Context ──────────────────────────────────
-        exec_ctx = ExecutionContext(
-            now=datetime.now(timezone.utc),
-            timezone="America/Sao_Paulo", # Defaulting for now, could be dynamic per workspace
-            locale="pt_BR",
-            workspace_id=str(workspace_id)
+        trace_id = request.conversation_id
+        trace = ReasoningTrace(
+            workspace_id=request.workspace_id,
+            trace_id=trace_id,
+            broadcaster=self._trace_broadcaster
         )
+        
+        try:
 
-        # ── 1. Build base context ────────────────────────────────────────
-        ctx = await self._build_context(request, workspace_id, trace)
-        if on_step:
-            await on_step(trace.nodes[-1])
+            # ── 0. Create Execution Context ──────────────────────────────────
+            exec_ctx = ExecutionContext(
+                now=datetime.now(timezone.utc),
+                timezone="America/Sao_Paulo", # Defaulting for now, could be dynamic per workspace
+                locale="pt_BR",
+                workspace_id=str(workspace_id)
+            )
 
-        # ── 2. Route intent (deterministic) ─────────────────────────────
-        intent = self._route_intent(request.message, trace)
-        if on_step:
-            await on_step(trace.nodes[-1])
+            # ── 1. Build base context ────────────────────────────────────────
+            ctx = await self._build_context(request, workspace_id, trace)
+            if on_step:
+                await on_step(trace.nodes[-1])
 
-        # ── 3. Decide routing (LLM, merged with intent flags) ────────────
-        decision = await self._decide(request, intent, exec_ctx, trace)
-        if on_step:
-            await on_step(trace.nodes[-1])
+            # ── 2. Route intent (deterministic) ─────────────────────────────
+            intent = self._route_intent(request.message, trace)
+            if on_step:
+                await on_step(trace.nodes[-1])
 
-        # ── 4. Execute capabilities ──────────────────────────────────────
-        conv_id = (
-            UUID(request.conversation_id)
-            if request.conversation_id else None
-        )
-        requires_approval = (
-            decision.need_confirmation
-            or decision.risk_level != RiskLevel.low
-        )
-        cap_result = await self._executor.execute(
-            message=request.message,
-            workspace_id=workspace_id,
-            decision=decision,
-            intent=intent,
-            trace=trace,
-            exec_ctx=exec_ctx,
-            requires_approval=requires_approval,
-            conversation_id=conv_id,
-        )
-        if on_step:
-            await on_step(trace.nodes[-1])
+            # ── 3. Decide routing (LLM, merged with intent flags) ────────────
+            decision = await self._decide(request, intent, exec_ctx, trace)
+            if on_step:
+                await on_step(trace.nodes[-1])
 
-        # ── 5. Generate response ─────────────────────────────────────────
-        response_text = await self._generate(
-            request, ctx, cap_result, trace, on_token
-        )
-        if on_step:
-            await on_step(trace.nodes[-1])
+            # ── 4. Execute capabilities ──────────────────────────────────────
+            conv_id = (
+                UUID(request.conversation_id)
+                if request.conversation_id else None
+            )
+            requires_approval = (
+                decision.need_confirmation
+                or decision.risk_level != RiskLevel.low
+            )
+            cap_result = await self._executor.execute(
+                message=request.message,
+                workspace_id=workspace_id,
+                decision=decision,
+                intent=intent,
+                trace=trace,
+                exec_ctx=exec_ctx,
+                requires_approval=requires_approval,
+                conversation_id=conv_id,
+            )
+            if on_step:
+                await on_step(trace.nodes[-1])
 
-        # ── 6. Validate response ─────────────────────────────────────────
-        response_text = await self._validate_response(
-            response_text, cap_result, intent, trace
-        )
+            # ── 5. Generate response ─────────────────────────────────────────
+            response_text = await self._generate(
+                request, ctx, cap_result, trace, on_token
+            )
+            if on_step:
+                await on_step(trace.nodes[-1])
 
-        # ── 7. Learn ─────────────────────────────────────────────────────
-        learning_actions = await self._maybe_learn(
-            request, decision, response_text, ctx,
-            cap_result.missions_created, workspace_id, trace,
-        )
-        if on_step:
-            await on_step(trace.nodes[-1])
+            # ── 6. Validate response ─────────────────────────────────────────
+            response_text = await self._validate_response(
+                response_text, cap_result, intent, trace
+            )
 
-        orch_response = OrchestratorResponse(
-            response=response_text,
-            decision=decision,
-            trace=trace.nodes,
-            confidence=decision.confidence,
-            risk=decision.risk_level,
-            sources=[],
-            capabilities_used=cap_result.capabilities_used,
-            missions_created=cap_result.missions_created,
-            learning_actions=learning_actions,
-            thinking_steps=trace.thinking_steps(),
-            memory_used=ctx.memory_count,
-            knowledge_used=ctx.knowledge_count,
-            internet_sources=cap_result.internet_sources,
-            integrations_used=[],
-            planner_used=decision.need_planner,
-            mission_created=bool(cap_result.missions_created),
-            estimated_cost=decision.estimated_cost,
-            estimated_time=decision.estimated_latency,
-            approval_required=decision.need_confirmation,
-        )
+            # ── 7. Learn ─────────────────────────────────────────────────────
+            learning_actions = await self._maybe_learn(
+                request, decision, response_text, ctx,
+                cap_result.missions_created, workspace_id, trace,
+            )
+            if on_step:
+                await on_step(trace.nodes[-1])
 
-        await self._persist_conversation(request, response_text)
-        return orch_response
+            orch_response = OrchestratorResponse(
+                response=response_text,
+                decision=decision,
+                trace=trace.nodes,
+                confidence=decision.confidence,
+                risk=decision.risk_level,
+                sources=[],
+                capabilities_used=cap_result.capabilities_used,
+                missions_created=cap_result.missions_created,
+                learning_actions=learning_actions,
+                thinking_steps=trace.thinking_steps(),
+                memory_used=ctx.memory_count,
+                knowledge_used=ctx.knowledge_count,
+                internet_sources=cap_result.internet_sources,
+                integrations_used=[],
+                planner_used=decision.need_planner,
+                mission_created=bool(cap_result.missions_created),
+                estimated_cost=decision.estimated_cost,
+                estimated_time=decision.estimated_latency,
+                approval_required=decision.need_confirmation,
+            )
+
+            await self._persist_conversation(request, response_text)
+            trace.finish(success=True)
+            return orch_response
+            
+        except Exception as exc:
+            trace.finish(success=False, error=str(exc))
+            raise
 
     # ------------------------------------------------------------------ #
     # Pipeline steps                                                       #

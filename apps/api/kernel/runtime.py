@@ -33,6 +33,8 @@ from kernel.orchestrator import (
 from kernel.orchestrator.capability_executor import CapabilityExecutor
 from kernel.providers.ollama import OllamaProvider
 
+from kernel.orchestrator.events.broadcaster import TraceBroadcaster, MemoryTraceBroadcaster
+
 logger = get_logger(__name__)
 
 
@@ -68,6 +70,7 @@ class KhonshuRuntime:
         self._decision_engine: DecisionEngine | None = None
         self._learning_engine: LearningEngine | None = None
         self._orchestrator: CognitiveOrchestrator | None = None
+        self._trace_broadcaster: TraceBroadcaster | None = None
 
     def start(self) -> None:
         logger.info("runtime.starting")
@@ -75,6 +78,7 @@ class KhonshuRuntime:
         self._metrics = CognitiveMetrics()
         self._reasoner = CapabilityReasoner()
         self._llm = OllamaProvider()
+        self._trace_broadcaster = MemoryTraceBroadcaster(history_size=200)
 
         self._memory = MemoryEngine(
             session_factory=AsyncSessionLocal,
@@ -182,6 +186,7 @@ class KhonshuRuntime:
             knowledge_engine=self._knowledge,
             metrics=self._metrics,
             session_factory=AsyncSessionLocal,
+            trace_broadcaster=self._trace_broadcaster,
         )
 
         # Event subscriptions
@@ -341,6 +346,11 @@ class KhonshuRuntime:
     def orchestrator(self) -> CognitiveOrchestrator:
         assert self._orchestrator is not None, "Runtime not started"
         return self._orchestrator
+
+    @property
+    def trace_broadcaster(self) -> TraceBroadcaster:
+        assert self._trace_broadcaster is not None, "Runtime not started"
+        return self._trace_broadcaster
 
 
 # Global singleton — start() called in main.py lifespan

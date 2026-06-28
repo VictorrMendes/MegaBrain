@@ -7,9 +7,12 @@ Endpoints:
 """
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from typing import AsyncGenerator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 
 from core.database import AsyncSessionLocal
@@ -132,3 +135,28 @@ async def get_health():
 async def list_capabilities():
     """All registered capabilities with full metadata."""
     return [c.to_planner_descriptor() for c in capability_registry.list()]
+
+@router.get("/history")
+async def get_trace_history(workspace_id: str | None = None, limit: int = 100):
+    """Get recent trace execution history."""
+    events = await runtime.trace_broadcaster.get_history(limit=limit, workspace_id=workspace_id)
+    return [event.model_dump() for event in events]
+
+@router.get("/stream")
+async def stream_traces(request: Request, workspace_id: str | None = None):
+    """SSE endpoint for live trace execution updates."""
+    async def event_generator() -> AsyncGenerator[str, None]:
+        q = runtime.trace_broadcaster.subscribe(workspace_id=workspace_id)
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                event = await q.get()
+                yield f"data: {json.dumps(event.model_dump(), default=str)}\n\n"
+        finally:
+            runtime.trace_broadcaster.unsubscribe(q)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream"
+    )
