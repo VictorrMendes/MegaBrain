@@ -50,8 +50,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR">
-      <body className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans antialiased text-content-primary bg-background`}>
+    <html lang="pt-BR" suppressHydrationWarning>
+      <body 
+        className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans antialiased text-content-primary bg-background`}
+        suppressHydrationWarning
+      >
         <ShellLayout>{children}</ShellLayout>
       </body>
     </html>
