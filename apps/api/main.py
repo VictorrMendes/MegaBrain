@@ -35,9 +35,9 @@ from routers.runtime import router as runtime_router
 from routers.scheduler import router as scheduler_router
 from routers.search import router as search_router
 from routers.workspaces import router as workspaces_router
+from routers.observability import router as observability_router
 
 logger = get_logger("khonshu.api")
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -157,4 +157,5 @@ app.include_router(briefings_router)
 app.include_router(orchestrator_router)
 app.include_router(admin_router)
 app.include_router(oauth_router)
+app.include_router(observability_router)
 

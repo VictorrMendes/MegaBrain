@@ -16,9 +16,13 @@ def setup_logging() -> None:
         structlog.processors.format_exc_info,
     ]
 
+    from kernel.observability.broadcaster import log_broadcaster
+
     if settings.env == "production":
+        processors.append(log_broadcaster.broadcast)
         processors.append(structlog.processors.JSONRenderer())
     else:
+        processors.append(log_broadcaster.broadcast)
         processors.append(structlog.dev.ConsoleRenderer())
 
     structlog.configure(
