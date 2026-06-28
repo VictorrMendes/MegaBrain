@@ -35,6 +35,15 @@ class LearningActionType(str, Enum):
 
 
 @dataclass
+class ExecutionContext:
+    """Contextual boundaries for the current execution pipeline."""
+    now: datetime
+    timezone: str
+    locale: str
+    workspace_id: str
+
+
+@dataclass
 class Decision:
     """Routing decision produced by DecisionEngine."""
 

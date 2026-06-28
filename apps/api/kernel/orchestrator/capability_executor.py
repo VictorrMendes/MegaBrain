@@ -164,6 +164,7 @@ class CapabilityExecutor:
         decision: Decision,
         intent: IntentFlags,
         trace: ReasoningTrace,
+        exec_ctx: ExecutionContext | None = None,
         requires_approval: bool = False,
         conversation_id: UUID | None = None,
     ) -> CapabilityResult:
@@ -173,7 +174,7 @@ class CapabilityExecutor:
             message, workspace_id, decision, intent, trace, result
         )
         await self._run_integrations(
-            workspace_id, decision, intent, trace, result
+            workspace_id, decision, intent, trace, result, exec_ctx
         )
         await self._run_mission(
             message, workspace_id, decision, intent, trace,
@@ -245,7 +246,7 @@ class CapabilityExecutor:
     # ------------------------------------------------------------------ #
 
     async def _run_integrations(
-        self, workspace_id, decision, intent, trace, result
+        self, workspace_id, decision, intent, trace, result, exec_ctx=None
     ) -> None:
         if not intent.need_integrations and not decision.target_capability:
             return
@@ -257,13 +258,23 @@ class CapabilityExecutor:
             # RC-18B: Execução Genérica Dinâmica
             if decision.target_capability and decision.target_provider:
                 try:
+                    # ── Resolve Temporal Parameters ──────────────────────
+                    temporal_param = decision.capability_params.get("temporal")
+                    if temporal_param and isinstance(temporal_param, dict):
+                        from kernel.resolvers.temporal import TemporalResolver
+                        date_range = temporal_param.get("range")
+                        if date_range and exec_ctx:
+                            resolution = TemporalResolver.resolve(date_range, exec_ctx)
+                            if resolution:
+                                decision.capability_params["time_min"] = resolution.time_min
+                                decision.capability_params["time_max"] = resolution.time_max
+                    
                     data = await self._integrations.execute_capability(
                         workspace_id,
                         decision.target_provider,
                         decision.target_capability,
                         decision.capability_params
                     )
-                    
                     import json
                     logger.info(f"[RC-18E] CapabilityExecutor | received data from IntegrationManager")
                     

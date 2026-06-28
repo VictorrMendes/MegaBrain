@@ -30,6 +30,7 @@ from .intent_router import IntentFlags, IntentRouter
 from .learning import LearningEngine
 from .models import (
     ConversationResult,
+    ExecutionContext,
     LearningAction,
     LearningActionType,
     LearningDecision,
@@ -118,8 +119,19 @@ class CognitiveOrchestrator:
         on_step: Callable[[TraceNode], Awaitable[None]] | None = None,
         on_token: TokenCallback | None = None,
     ) -> OrchestratorResponse:
+        if not request.workspace_id:
+            raise ValueError("workspace_id is required")
+
         workspace_id = UUID(request.workspace_id)
         trace = ReasoningTrace()
+
+        # ── 0. Create Execution Context ──────────────────────────────────
+        exec_ctx = ExecutionContext(
+            now=datetime.now(timezone.utc),
+            timezone="America/Sao_Paulo", # Defaulting for now, could be dynamic per workspace
+            locale="pt_BR",
+            workspace_id=str(workspace_id)
+        )
 
         # ── 1. Build base context ────────────────────────────────────────
         ctx = await self._build_context(request, workspace_id, trace)
@@ -132,7 +144,7 @@ class CognitiveOrchestrator:
             await on_step(trace.nodes[-1])
 
         # ── 3. Decide routing (LLM, merged with intent flags) ────────────
-        decision = await self._decide(request, intent, trace)
+        decision = await self._decide(request, intent, exec_ctx, trace)
         if on_step:
             await on_step(trace.nodes[-1])
 
@@ -236,14 +248,14 @@ class CognitiveOrchestrator:
         trace.complete(node, intent.summary() or "none")
         return intent
 
-    async def _decide(self, request, intent: IntentFlags, trace):
+    async def _decide(self, request, intent: IntentFlags, exec_ctx: ExecutionContext, trace):
         node = trace.begin("decide", "DecisionEngine")
         _metrics_ctx = (
             self._metrics.time_planning()
             if self._metrics else contextlib.nullcontext()
         )
         with _metrics_ctx:
-            decision = await self._decision.decide(request.message)
+            decision = await self._decision.decide(request.message, exec_ctx)
 
         # Merge: IntentRouter flags take priority (OR semantics)
         if intent.need_search:

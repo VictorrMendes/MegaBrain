@@ -185,9 +185,13 @@ class GoogleWorkspaceProvider(IntegrationProvider):
             log = logging.getLogger("khonshu.provider.google")
             log.info(f"[RC-18E] Provider execute | capability: {capability} | params: {params}")
             
+            time_min = params.get("time_min")
+            if not time_min:
+                raise ValueError("Missing temporal boundaries for list_events (time_min is required)")
+                
             result = await connector.list_events(
                 calendar_id=params.get("calendar_id", "primary"),
-                time_min=params.get("time_min"),
+                time_min=time_min,
                 time_max=params.get("time_max"),
                 max_results=params.get("max_results", 10)
             )
