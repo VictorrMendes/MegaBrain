@@ -92,7 +92,7 @@ export function ContextPanel({ data, onClose }: ContextPanelProps) {
   return (
     <aside
       className={cn(
-        "flex w-64 shrink-0 flex-col",
+        "flex w-64 shrink-0 flex-col md:h-full",
         "border-l border-[var(--border-subtle)] bg-[var(--surface-raised)]",
         "animate-slide-in-right",
       )}

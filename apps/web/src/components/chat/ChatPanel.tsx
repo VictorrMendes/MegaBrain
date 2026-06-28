@@ -379,7 +379,7 @@ export function ChatPanel() {
       {sidePanel?.type === "reasoning" && (
         <>
           <div className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 md:hidden backdrop-blur-sm" onClick={() => setSidePanel(null)} />
-          <div className="fixed inset-x-0 bottom-0 z-[var(--z-modal)] max-h-[85dvh] overflow-y-auto md:relative md:inset-auto md:z-auto md:max-h-none md:overflow-visible shadow-2xl glass-lg rounded-t-xl md:rounded-none">
+          <div className="fixed inset-x-0 bottom-0 z-[var(--z-modal)] max-h-[85dvh] overflow-y-auto md:relative md:inset-auto md:z-auto md:max-h-none md:overflow-hidden md:h-full shadow-2xl glass-lg rounded-t-xl md:rounded-none">
             <ReasoningPanel data={sidePanel.data} onClose={() => setSidePanel(null)} />
           </div>
         </>
@@ -387,7 +387,7 @@ export function ChatPanel() {
       {sidePanel?.type === "context" && (
         <>
           <div className="fixed inset-0 z-[var(--z-overlay)] bg-black/60 md:hidden backdrop-blur-sm" onClick={() => setSidePanel(null)} />
-          <div className="fixed inset-x-0 bottom-0 z-[var(--z-modal)] max-h-[85dvh] overflow-y-auto md:relative md:inset-auto md:z-auto md:max-h-none md:overflow-visible shadow-2xl glass-lg rounded-t-xl md:rounded-none">
+          <div className="fixed inset-x-0 bottom-0 z-[var(--z-modal)] max-h-[85dvh] overflow-y-auto md:relative md:inset-auto md:z-auto md:max-h-none md:overflow-hidden md:h-full shadow-2xl glass-lg rounded-t-xl md:rounded-none">
             <ContextPanel data={sidePanel.data} onClose={() => setSidePanel(null)} />
           </div>
         </>
