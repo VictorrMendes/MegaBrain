@@ -5,15 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from models.integration import ConnectedAccount, AccountStatus
-from kernel.runtime import get_runtime
+from kernel.runtime import runtime
 from kernel.observability.broadcaster import log_broadcaster
 
 router = APIRouter(prefix="/observability", tags=["observability"])
 
 @router.get("/metrics")
 async def get_metrics(db: AsyncSession = Depends(get_db)):
-    runtime = get_runtime()
-    
     system_health = "healthy"
     
     # Count OAuth errors
