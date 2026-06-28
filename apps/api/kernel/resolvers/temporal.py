@@ -51,11 +51,16 @@ class TemporalResolver:
             )
             
         if range_lower == "this_week":
-            # Assuming Monday is start of week
-            start_of_week = today_start - timedelta(days=today_start.weekday())
-            end_of_week = today_end + timedelta(days=6 - today_start.weekday())
+            # Assistant logic: people usually mean "from today until Sunday"
+            # If today is already Sunday, they usually mean the new week (next 7 days)
+            days_to_sunday = 6 - today_start.weekday()
+            if days_to_sunday == 0:
+                end_of_week = today_end + timedelta(days=6)
+            else:
+                end_of_week = today_end + timedelta(days=days_to_sunday)
+                
             return TemporalResolution(
-                time_min=start_of_week.isoformat(),
+                time_min=today_start.isoformat(),
                 time_max=end_of_week.isoformat()
             )
             
