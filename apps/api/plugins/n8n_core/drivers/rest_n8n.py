@@ -15,6 +15,7 @@ class RestN8NDriver(ExecutionDriver):
     def __init__(self):
         self.base_url = os.getenv("N8N_BASE_URL", "https://n8n.vmserver.app.br")
         self.auth_token = os.getenv("N8N_AUTH_TOKEN", "")
+        self.test_mode = os.getenv("N8N_TEST_MODE", "true").lower() == "true" # Default true during development
 
     async def execute(self, node: ExecutionNode, workspace_id: str) -> None:
         logger.info("driver.rest_n8n.executing", capability=node.capability, node_id=str(node.id))
@@ -25,7 +26,9 @@ class RestN8NDriver(ExecutionDriver):
         
         # Capability naming convention: n8n.communication.send_message
         endpoint_path = node.capability.replace("n8n.", "").replace(".", "/")
-        url = f"{self.base_url.rstrip('/')}/webhook/khonshu/{endpoint_path}"
+        
+        webhook_base = "webhook-test" if self.test_mode else "webhook"
+        url = f"{self.base_url.rstrip('/')}/{webhook_base}/khonshu/{endpoint_path}"
         
         headers = {"Content-Type": "application/json"}
         if self.auth_token:
