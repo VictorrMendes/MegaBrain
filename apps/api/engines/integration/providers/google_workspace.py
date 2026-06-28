@@ -74,12 +74,15 @@ class GoogleWorkspaceProvider(IntegrationProvider):
             config=config, # Save encrypted tokens
         )
 
-    async def sync(self, account: ConnectedAccount, since: datetime | None = None) -> SyncResult:
+    async def sync(self, account: ConnectedAccount | None, since: datetime | None = None) -> SyncResult:
+        if not account:
+            return SyncResult(error_message="No active connected account found")
+            
         from engines.integration.identity.token_manager import token_manager
         from engines.integration.connectors.google_calendar import GoogleCalendarConnector
         
         # Access token is stored encrypted in account.config
-        encrypted_token = account.config.get("access_token_encrypted")
+        encrypted_token = account.config.get("access_token_encrypted") if account.config else None
         if not encrypted_token:
             return SyncResult(error_message="Missing access token")
             
