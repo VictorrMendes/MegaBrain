@@ -19,6 +19,9 @@ from .integration import ConnectedAccount, Integration, SyncRecord, IntegrationS
 from .workspace import Workspace
 from .workspace_plugin import WorkspacePlugin
 from .workspace_session import WorkspaceSession
+from .inbox import InboxItem, InboxItemType, InboxItemStatus
+from .knowledge import Entity, EntityType, Relation, Fact, Observation
+from .scheduler import SchedulerTrigger, TriggerType, TriggerStatus
 
 __all__ = [
     "Base",
@@ -49,4 +52,15 @@ __all__ = [
     "MissionLog",
     "StepType",
     "StepStatus",
+    "InboxItem",
+    "InboxItemType",
+    "InboxItemStatus",
+    "Entity",
+    "EntityType",
+    "Relation",
+    "Fact",
+    "Observation",
+    "SchedulerTrigger",
+    "TriggerType",
+    "TriggerStatus",
 ]
