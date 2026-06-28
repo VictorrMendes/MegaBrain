@@ -1,6 +1,5 @@
 from typing import List, Dict, Any
 from kernel.logger import get_logger
-from models.execution import NodeType
 from kernel.orchestrator.ir_compiler import ExecutionIR, IRNode
 
 logger = get_logger(__name__)

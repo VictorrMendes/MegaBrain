@@ -1,6 +1,5 @@
 from typing import Any, Dict
 from kernel.logger import get_logger
-from models.execution import NodeType
 from kernel.orchestrator.ir_compiler import ExecutionIR, IRNode
 from kernel.plugins.plugin_manager import plugin_manager
 
