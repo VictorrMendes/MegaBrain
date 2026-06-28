@@ -262,7 +262,12 @@ class CapabilityExecutor:
                     target_cap = decision.target_capability
                     if decision.target_provider and target_cap.startswith(f"{decision.target_provider}."):
                         target_cap = target_cap[len(decision.target_provider) + 1:]
-                        decision.target_capability = target_cap
+                    
+                    # LLM hallucination fallback
+                    if target_cap == "calendar":
+                        target_cap = "calendar.list_events"
+                        
+                    decision.target_capability = target_cap
 
                     # ── Resolve Temporal Parameters ──────────────────────
                     temporal_param = decision.capability_params.get("temporal")
