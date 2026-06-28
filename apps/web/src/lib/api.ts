@@ -798,7 +798,7 @@ export const api = {
   syncAllIntegrations: (wsId: string) =>
     post<{ synced: number }>(`/integrations/${wsId}/sync-all`),
   checkIntegrationHealth: (wsId: string, integrationId: string) =>
-    get<IntegrationHealth>(`/integrations/${wsId}/${integrationId}/health`),
+    get<{ health: IntegrationHealth }>(`/integrations/${wsId}/${integrationId}/health`),
 
   // ── Admin ─────────────────────────────────────────────────────────────
   listSecrets: () => get<{ providers: string[] }>("/admin/secrets"),
