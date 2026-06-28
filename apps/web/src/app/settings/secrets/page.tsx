@@ -18,8 +18,8 @@ export default function SecretsPage() {
 
   const fetchProviders = async () => {
     try {
-      const res = await api.get("/api/admin/secrets")
-      setProviders(res.data.providers || [])
+      const res = await api.listSecrets()
+      setProviders(res.providers || [])
     } catch (error) {
       console.error("Failed to fetch secrets", error)
     } finally {
@@ -31,12 +31,9 @@ export default function SecretsPage() {
     if (!newProvider || !newClientId || !newClientSecret) return
 
     try {
-      await api.post("/api/admin/secrets", {
-        provider: newProvider.toLowerCase(),
-        payload: {
-          client_id: newClientId,
-          client_secret: newClientSecret
-        }
+      await api.createSecret(newProvider.toLowerCase(), {
+        client_id: newClientId,
+        client_secret: newClientSecret
       })
       
       setNewProvider("")
@@ -50,7 +47,7 @@ export default function SecretsPage() {
 
   const handleDelete = async (provider: string) => {
     try {
-      await api.delete(`/api/admin/secrets/${provider}`)
+      await api.deleteSecret(provider)
       fetchProviders()
     } catch (error) {
       console.error("Failed to delete secret", error)

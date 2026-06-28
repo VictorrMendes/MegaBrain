@@ -798,7 +798,14 @@ export const api = {
   syncAllIntegrations: (wsId: string) =>
     post<{ synced: number }>(`/integrations/${wsId}/sync-all`),
   checkIntegrationHealth: (wsId: string, integrationId: string) =>
-    get<{ health: IntegrationHealth }>(`/integrations/${wsId}/${integrationId}/health`),
+    get<IntegrationHealth>(`/integrations/${wsId}/${integrationId}/health`),
+
+  // ── Admin ─────────────────────────────────────────────────────────────
+  listSecrets: () => get<{ providers: string[] }>("/admin/secrets"),
+  createSecret: (provider: string, payload: Record<string, unknown>) =>
+    post<unknown>("/admin/secrets", { provider, payload }),
+  deleteSecret: (provider: string) =>
+    del(`/admin/secrets/${provider}`),
   listIntegrationAccounts: (wsId: string, integrationId: string) =>
     get<ConnectedAccount[]>(`/integrations/${wsId}/${integrationId}/accounts`),
   getSyncHistory: (wsId: string, integrationId: string, limit = 10) =>
