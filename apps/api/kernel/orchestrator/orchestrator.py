@@ -164,6 +164,7 @@ class CognitiveOrchestrator:
             decision=decision,
             intent=intent,
             trace=trace,
+            exec_ctx=exec_ctx,
             requires_approval=requires_approval,
             conversation_id=conv_id,
         )
