@@ -15,7 +15,7 @@ class SecretPayload(BaseModel):
     provider: str
     payload: Dict[str, Any]
 
-@router.get("/")
+@router.get("")
 async def list_secrets(session: AsyncSession = Depends(get_db)):
     """List all registered secret providers."""
     stmt = select(IntegrationSecret.provider)
@@ -23,7 +23,7 @@ async def list_secrets(session: AsyncSession = Depends(get_db)):
     providers = result.scalars().all()
     return {"providers": providers}
 
-@router.post("/")
+@router.post("")
 async def set_secret(secret_data: SecretPayload, session: AsyncSession = Depends(get_db)):
     """Create or update a secret for a provider."""
     # Encrypt the payload using the token manager
