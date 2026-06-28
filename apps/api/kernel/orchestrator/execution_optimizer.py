@@ -1,6 +1,7 @@
 from typing import List, Dict, Any
 from kernel.logger import get_logger
-from kernel.orchestrator.ir_compiler import ExecutionIR, IRNode, NodeType
+from models.execution import NodeType
+from kernel.orchestrator.ir_compiler import ExecutionIR, IRNode
 
 logger = get_logger(__name__)
 
@@ -13,17 +14,13 @@ class ExecutionOptimizer:
     
     def optimize(self, ir: ExecutionIR) -> ExecutionIR:
         """Applies compiler-like heuristics to the IR."""
-        logger.info("execution_optimizer.optimizing_ir", ir_id=ir.id)
+        logger.info("execution_optimizer.optimizing_ir")
         
-        optimized_nodes = self._optimize_nodes(ir.nodes)
+        self._optimize_node(ir.root)
         
-        return ExecutionIR(
-            id=ir.id,
-            workspace_id=ir.workspace_id,
-            nodes=optimized_nodes
-        )
+        return ir
         
-    def _optimize_nodes(self, nodes: List[IRNode]) -> List[IRNode]:
+    def _optimize_node(self, node: IRNode) -> None:
         """
         MOCK IMPLEMENTATION:
         Example Heuristic: If we have multiple consecutive ACTION nodes that do not 
@@ -32,13 +29,17 @@ class ExecutionOptimizer:
         """
         # TODO: Implement full graph dependency analysis (LLVM style)
         
-        optimized = []
-        for node in nodes:
-            # Recursively optimize children if they exist
-            if node.children:
-                node.children = self._optimize_nodes(node.children)
-            optimized.append(node)
-            
-        return optimized
+        if getattr(node, "type", "") == "SEQUENCE":
+            for child in getattr(node, "nodes", []):
+                self._optimize_node(child)
+        elif getattr(node, "type", "") == "PARALLEL":
+            for branch in getattr(node, "branches", []):
+                for child in branch:
+                    self._optimize_node(child)
+        elif getattr(node, "type", "") == "CONDITIONAL":
+            for child in getattr(node, "true_branch", []):
+                self._optimize_node(child)
+            for child in getattr(node, "false_branch", []):
+                self._optimize_node(child)
 
 execution_optimizer = ExecutionOptimizer()

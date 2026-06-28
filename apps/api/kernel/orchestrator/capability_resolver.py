@@ -1,6 +1,7 @@
 from typing import Any, Dict
 from kernel.logger import get_logger
-from kernel.orchestrator.ir_compiler import ExecutionIR, IRNode, NodeType
+from models.execution import NodeType
+from kernel.orchestrator.ir_compiler import ExecutionIR, IRNode
 from kernel.plugins.plugin_manager import plugin_manager
 
 logger = get_logger(__name__)
@@ -16,50 +17,52 @@ class CapabilityResolver:
         Takes the Optimized Abstract IR and resolves every abstract action
         into a concrete Provider capability based on the active Registry and WorldState.
         """
-        logger.info("capability_resolver.resolving", ir_id=abstract_ir.id)
+        logger.info("capability_resolver.resolving")
         
         # Ensure plugins are loaded
         if not plugin_manager.plugins:
             plugin_manager.load_all()
             
-        resolved_nodes = await self._resolve_nodes(abstract_ir.nodes, world_state)
+        await self._resolve_node(abstract_ir.root, world_state)
         
-        return ExecutionIR(
-            id=abstract_ir.id,
-            workspace_id=abstract_ir.workspace_id,
-            nodes=resolved_nodes
-        )
+        return abstract_ir
         
-    async def _resolve_nodes(self, nodes: list[IRNode], world_state: Dict[str, Any]) -> list[IRNode]:
+    async def _resolve_node(self, node: IRNode, world_state: Dict[str, Any]) -> None:
         """
-        Resolves abstract capabilities by matching 'abstract_intent' in loaded plugins.
+        Recursively traverses the IR tree and resolves TASK nodes.
         """
-        resolved = []
-        for node in nodes:
-            if node.type == NodeType.ACTION:
-                abstract_intent = node.capability
-                found = False
-                
-                # Search across all loaded plugins
-                for plugin_name, manifest in plugin_manager.plugins.items():
-                    caps = manifest.get("loaded_capabilities", {})
-                    for cap_key, cap_data in caps.items():
-                        if cap_data.get("abstract_intent", "").lower() == abstract_intent.lower():
-                            node.capability = cap_data.get("name")
-                            found = True
-                            logger.debug("capability_resolver.match_found", abstract=abstract_intent, concrete=node.capability)
-                            break
-                    if found:
-                        break
-                        
-                if not found:
-                    logger.warning("capability_resolver.no_match", abstract=abstract_intent)
-                    
-            if node.children:
-                node.children = await self._resolve_nodes(node.children, world_state)
-                
-            resolved.append(node)
+        if node.type == "TASK":
+            abstract_intent = getattr(node, "capability", "")
+            found = False
             
-        return resolved
+            # Search across all loaded plugins
+            for plugin_name, manifest in plugin_manager.plugins.items():
+                caps = manifest.get("loaded_capabilities", {})
+                for cap_key, cap_data in caps.items():
+                    if cap_data.get("abstract_intent", "").lower() == abstract_intent.lower():
+                        node.capability = cap_data.get("name")
+                        found = True
+                        logger.debug("capability_resolver.match_found", abstract=abstract_intent, concrete=node.capability)
+                        break
+                if found:
+                    break
+                    
+            if not found:
+                logger.warning("capability_resolver.no_match", abstract=abstract_intent)
+                
+        elif node.type == "SEQUENCE":
+            for child in getattr(node, "nodes", []):
+                await self._resolve_node(child, world_state)
+                
+        elif node.type == "PARALLEL":
+            for branch in getattr(node, "branches", []):
+                for child in branch:
+                    await self._resolve_node(child, world_state)
+                    
+        elif node.type == "CONDITIONAL":
+            for child in getattr(node, "true_branch", []):
+                await self._resolve_node(child, world_state)
+            for child in getattr(node, "false_branch", []):
+                await self._resolve_node(child, world_state)
 
 capability_resolver = CapabilityResolver()
