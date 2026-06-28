@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   LayoutDashboardIcon,
   MessageSquareIcon,
@@ -97,7 +98,7 @@ export function AppNav() {
 
       {/* Settings & Workspace avatar — bottom */}
       <div className="mt-auto flex flex-col gap-2">
-        <a
+        <Link
           href="/settings/secrets"
           className={cn(
             "group mx-auto flex h-9 w-9 items-center justify-center rounded-lg",
@@ -119,7 +120,7 @@ export function AppNav() {
           >
             Settings
           </span>
-        </a>
+        </Link>
 
         <button
           onClick={() => setShowSwitcher((v) => !v)}

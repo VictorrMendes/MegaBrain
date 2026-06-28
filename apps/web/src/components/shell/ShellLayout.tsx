@@ -75,8 +75,8 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
                   <OverlayManager />
                   
                   {/* Fallback de rotas do Next.js (children invisível ou renderizado se não houver overlay) */}
-                  {/* Por enquanto escondemos o children se for SPA pura, ou deixamos para deep links */}
-                  <div className="hidden">
+                  {/* Exibimos children se a rota for de settings */}
+                  <div className={pathname?.startsWith("/settings") ? "absolute inset-0 z-40 bg-[var(--surface-base)]" : "hidden"}>
                     {children}
                   </div>
                 </main>
