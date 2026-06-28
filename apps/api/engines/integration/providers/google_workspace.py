@@ -206,7 +206,17 @@ class GoogleWorkspaceProvider(IntegrationProvider):
             )
         elif capability == "calendar.create_event":
             # Normalize event_data which could be passed inside params or as params itself
-            event_data = params.get("event_data", params)
+            event_data = dict(params.get("event_data", params))
+            
+            # Convert generic string start/end to Google's required dateTime format
+            for field in ["start", "end"]:
+                if field in event_data and isinstance(event_data[field], str):
+                    val = event_data[field]
+                    if "T" in val:
+                        event_data[field] = {"dateTime": val}
+                    else:
+                        event_data[field] = {"date": val}
+                    
             return await connector.create_event(
                 event_data=event_data,
                 calendar_id=params.get("calendar_id", "primary")
