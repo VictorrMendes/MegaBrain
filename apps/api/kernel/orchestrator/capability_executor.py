@@ -258,6 +258,12 @@ class CapabilityExecutor:
             # RC-18B: Execução Genérica Dinâmica
             if decision.target_capability and decision.target_provider:
                 try:
+                    # Robust capability name (e.g. google.calendar.list_events -> calendar.list_events)
+                    target_cap = decision.target_capability
+                    if decision.target_provider and target_cap.startswith(f"{decision.target_provider}."):
+                        target_cap = target_cap[len(decision.target_provider) + 1:]
+                        decision.target_capability = target_cap
+
                     # ── Resolve Temporal Parameters ──────────────────────
                     temporal_param = decision.capability_params.get("temporal")
                     if temporal_param and isinstance(temporal_param, dict):
