@@ -296,7 +296,7 @@ export function ChatPanel() {
           </div>
         </div>
 
-        {/* Plugins */}
+        {/* Plugins (Desabilitados temporariamente a pedido)
         <div className="border-t border-[var(--border-subtle)] flex flex-col max-h-52">
           <div className="flex items-center justify-between px-4 py-2">
             <span className="text-[11px] font-semibold uppercase tracking-widest text-content-muted">Plugins</span>
@@ -345,6 +345,7 @@ export function ChatPanel() {
             )}
           </div>
         </div>
+        */}
       </aside>
 
       {/* Main Chat Area */}
