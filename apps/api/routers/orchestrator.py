@@ -158,6 +158,7 @@ async def stream(
             )
         )
 
+        last_ping = asyncio.get_event_loop().time()
         try:
             while not task.done():
                 # Drain tokens with priority (tokens come fast)
@@ -180,6 +181,12 @@ async def stream(
                     })
                 except asyncio.TimeoutError:
                     pass
+                
+                # Keep-alive ping every 10 seconds to prevent Next.js / browser network drops
+                now = asyncio.get_event_loop().time()
+                if now - last_ping > 10.0:
+                    yield _sse({"event": "ping", "timestamp": str(now)})
+                    last_ping = now
 
             # Drain remaining tokens
             while not token_queue.empty():

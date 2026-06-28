@@ -75,7 +75,7 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
         if system:
             payload["system"] = system
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=300.0) as client:
             resp = await client.post(
                 f"{self.base_url}/api/generate", json=payload
             )
@@ -103,7 +103,7 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
         if system:
             payload["system"] = system
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=300.0) as client:
             async with client.stream(
                 "POST", f"{self.base_url}/api/generate", json=payload
             ) as resp:
@@ -131,7 +131,7 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
             "stream": False,
             "think": False,
         }
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=300.0) as client:
             resp = await client.post(
                 f"{self.base_url}/api/chat", json=payload
             )
@@ -164,7 +164,7 @@ class OllamaProvider(LLMProvider, EmbeddingProvider):
             "stream": True,
             "think": False,
         }
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=300.0) as client:
             async with client.stream(
                 "POST", f"{self.base_url}/api/chat", json=payload
             ) as resp:
