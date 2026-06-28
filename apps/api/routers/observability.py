@@ -30,15 +30,19 @@ async def get_metrics(db: AsyncSession = Depends(get_db)):
         "avg_api_latency": avg_latency
     }
 
-@router.websocket("/logs/stream")
-async def websocket_logs(websocket: WebSocket):
-    await websocket.accept()
-    q = log_broadcaster.subscribe()
-    try:
-        while True:
-            msg = await q.get()
-            await websocket.send_text(msg)
-    except WebSocketDisconnect:
-        pass
-    finally:
-        log_broadcaster.unsubscribe(q)
+from fastapi.responses import StreamingResponse
+
+@router.get("/logs/stream")
+async def sse_logs():
+    async def log_generator():
+        q = log_broadcaster.subscribe()
+        try:
+            while True:
+                msg = await q.get()
+                yield f"data: {msg}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            log_broadcaster.unsubscribe(q)
+            
+    return StreamingResponse(log_generator(), media_type="text/event-stream")

@@ -42,13 +42,10 @@ export default function ObservabilityPage() {
   }, [])
   
   useEffect(() => {
-    // Connect WebSocket for logs
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-    const wsUrl = `${protocol}//${window.location.host}/api/observability/logs/stream`
+    // Connect SSE for logs (replaces WebSocket to avoid proxy issues)
+    const eventSource = new EventSource("/api/observability/logs/stream")
     
-    const ws = new WebSocket(wsUrl)
-    
-    ws.onmessage = (event) => {
+    eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data) as LogEntry
         setLogs(prev => {
@@ -62,7 +59,7 @@ export default function ObservabilityPage() {
     }
     
     return () => {
-      ws.close()
+      eventSource.close()
     }
   }, [])
 
@@ -74,7 +71,7 @@ export default function ObservabilityPage() {
   })
   
   return (
-    <div className="space-y-8 h-full flex flex-col">
+    <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-white tracking-tight">Observability</h1>
         <p className="text-white/60 text-sm mt-1">
@@ -113,12 +110,12 @@ export default function ObservabilityPage() {
         </div>
       </div>
 
-      <div className="space-y-4 pt-4 flex-1 flex flex-col min-h-0">
+      <div className="space-y-4 pt-4">
         <h2 className="text-lg font-medium text-white flex items-center gap-2">
           Integration Logs
         </h2>
         
-        <div className="rounded-xl border border-white/10 bg-black/40 flex-1 flex flex-col overflow-hidden">
+        <div className="rounded-xl border border-white/10 bg-black/40 flex flex-col overflow-hidden h-[500px]">
           <div className="flex items-center gap-4 border-b border-white/10 p-3 bg-white/5 shrink-0">
             <button 
               onClick={() => setFilter("all")}
@@ -175,4 +172,3 @@ export default function ObservabilityPage() {
     </div>
   )
 }
-
