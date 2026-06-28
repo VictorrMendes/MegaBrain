@@ -13,6 +13,7 @@ import {
   PackageIcon,
   PlugIcon,
   CheckIcon,
+  SettingsIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useWorkspace } from "@/context/WorkspaceContext";
@@ -94,8 +95,32 @@ export function AppNav() {
         );
       })}
 
-      {/* Workspace avatar — bottom */}
-      <div className="mt-auto">
+      {/* Settings & Workspace avatar — bottom */}
+      <div className="mt-auto flex flex-col gap-2">
+        <a
+          href="/settings/secrets"
+          className={cn(
+            "group mx-auto flex h-9 w-9 items-center justify-center rounded-lg",
+            "transition-colors duration-[100ms] relative",
+            "text-content-muted hover:bg-surface-subtle hover:text-content-secondary"
+          )}
+        >
+          <SettingsIcon size={16} strokeWidth={1.8} />
+
+          {/* Tooltip */}
+          <span
+            className={cn(
+              "pointer-events-none absolute left-full ml-3 z-50",
+              "hidden whitespace-nowrap rounded-md",
+              "bg-[var(--surface-overlay)] border border-[var(--border-default)]",
+              "px-2.5 py-1 text-xs text-content-primary shadow-xl",
+              "group-hover:flex items-center"
+            )}
+          >
+            Settings
+          </span>
+        </a>
+
         <button
           onClick={() => setShowSwitcher((v) => !v)}
           className={cn(
