@@ -25,7 +25,18 @@ class GoogleCalendarConnector(BaseConnector):
         if time_max:
             params["timeMax"] = time_max
             
-        return await self.get(f"/calendars/{calendar_id}/events", params=params)
+        import logging
+        log = logging.getLogger("khonshu.connector.google_calendar")
+        log.info(f"[RC-18E] Connector list_events | params: {params}")
+        
+        try:
+            response_data = await self.get(f"/calendars/{calendar_id}/events", params=params)
+            num_events = len(response_data.get("items", []))
+            log.info(f"[RC-18E] Connector list_events | items returned: {num_events}")
+            return response_data
+        except Exception as e:
+            log.info(f"[RC-18E] Connector list_events | error: {e}")
+            raise
 
     async def get_event(self, event_id: str, calendar_id: str = "primary") -> Dict[str, Any]:
         return await self.get(f"/calendars/{calendar_id}/events/{event_id}")

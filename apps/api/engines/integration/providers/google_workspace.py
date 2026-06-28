@@ -181,12 +181,20 @@ class GoogleWorkspaceProvider(IntegrationProvider):
         connector = GoogleCalendarConnector(access_token)
         
         if capability == "calendar.list_events":
-            return await connector.list_events(
+            import logging
+            log = logging.getLogger("khonshu.provider.google")
+            log.info(f"[RC-18E] Provider execute | capability: {capability} | params: {params}")
+            
+            result = await connector.list_events(
                 calendar_id=params.get("calendar_id", "primary"),
                 time_min=params.get("time_min"),
                 time_max=params.get("time_max"),
                 max_results=params.get("max_results", 10)
             )
+            
+            num_items = len(result.get("items", []))
+            log.info(f"[RC-18E] Provider execute | return object has items: {num_items}")
+            return result
         elif capability == "calendar.get_event":
             return await connector.get_event(
                 event_id=params["event_id"],

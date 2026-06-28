@@ -464,7 +464,10 @@ class IntegrationManager:
         if provider_cls is None:
             raise ValueError(f"No provider for '{slug}'")
 
-        return await provider_cls().execute(capability, params, account)
+        logger.info(f"[RC-18E] IntegrationManager execute_capability | provider: {slug} | capability: {capability}")
+        result = await provider_cls().execute(capability, params, account)
+        logger.info(f"[RC-18E] IntegrationManager execute_capability | result keys: {list(result.keys()) if isinstance(result, dict) else 'not dict'}")
+        return result
 
     # ------------------------------------------------------------------ #
     # Helpers                                                              #

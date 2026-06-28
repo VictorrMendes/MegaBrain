@@ -263,8 +263,28 @@ class CapabilityExecutor:
                         decision.target_capability,
                         decision.capability_params
                     )
+                    
                     import json
-                    result.generic_summary = f"Execução concluída. Capability '{decision.target_capability}'. Retorno:\n```json\n{json.dumps(data, indent=2, ensure_ascii=False)}\n```"
+                    logger.info(f"[RC-18E] CapabilityExecutor | received data from IntegrationManager")
+                    
+                    # Check for empty payload to enforce explicit failure
+                    is_empty = False
+                    if not data:
+                        is_empty = True
+                    elif isinstance(data, dict):
+                        if "items" in data and not data["items"]:
+                            is_empty = True
+                        elif "events" in data and not data["events"]:
+                            is_empty = True
+                        elif "error" in data:
+                            is_empty = True # Let it be treated as error/empty contextually, wait, actually we want to preserve the error text.
+                            
+                    if is_empty and "error" not in data:
+                        result.generic_summary = f"Execução concluída. Capability '{decision.target_capability}'.\n\nsuccess = false\nerror = 'Provider returned no events or payload was empty.'"
+                        logger.info(f"[RC-18E] CapabilityExecutor | injected explicit empty failure")
+                    else:
+                        result.generic_summary = f"Execução concluída. Capability '{decision.target_capability}'. Retorno:\n```json\n{json.dumps(data, indent=2, ensure_ascii=False)}\n```"
+                        
                     caps.append(decision.target_capability)
                 except Exception as exc:
                     result.generic_summary = f"Erro ao executar capability '{decision.target_capability}': {exc}"
@@ -273,6 +293,7 @@ class CapabilityExecutor:
                         capability=decision.target_capability,
                         error=str(exc)
                     )
+                    caps.append(decision.target_capability)
 
             if intent.need_docker and not decision.target_capability:
                 try:
