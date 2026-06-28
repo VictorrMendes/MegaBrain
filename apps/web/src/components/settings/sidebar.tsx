@@ -17,15 +17,11 @@ import {
 import { cn } from "@/lib/cn"
 
 const SETTINGS_TABS = [
-  // { name: "General", href: "/settings/general", icon: Settings },
-  // { name: "AI Models", href: "/settings/models", icon: Cpu },
-  // { name: "Integrations", href: "/settings/integrations", icon: ToyBrick },
+  { name: "General", href: "/settings/general", icon: Settings },
   { name: "Secrets", href: "/settings/secrets", icon: Key },
-  // { name: "Runtime", href: "/settings/runtime", icon: Activity },
-  // { name: "Appearance", href: "/settings/appearance", icon: Palette },
-  // { name: "Observability", href: "/settings/observability", icon: LineChart },
-  // { name: "Backups", href: "/settings/backups", icon: HardDrive },
-  // { name: "About", href: "/settings/about", icon: Info },
+  { name: "Integrations", href: "/settings/integrations", icon: ToyBrick },
+  { name: "Runtime", href: "/settings/runtime", icon: Activity },
+  { name: "Observability", href: "/settings/observability", icon: LineChart },
 ]
 
 export function SettingsSidebar() {

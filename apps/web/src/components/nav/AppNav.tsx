@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboardIcon,
   MessageSquareIcon,
@@ -37,6 +38,9 @@ export function AppNav() {
   const { workspaces, current, setCurrent } = useWorkspace();
   const [showSwitcher, setShowSwitcher] = useState(false);
   
+  const router = useRouter();
+  const pathname = usePathname();
+  
   const { overlayStack, pushOverlay, closeAllOverlays } = useUIStore();
   const activeOverlay = overlayStack.length > 0 ? overlayStack[overlayStack.length - 1] : "chat";
 
@@ -64,6 +68,9 @@ export function AppNav() {
           <button
             key={id}
             onClick={() => {
+              if (pathname?.startsWith("/settings")) {
+                router.push("/");
+              }
               if (id === "chat") {
                 closeAllOverlays();
               } else {

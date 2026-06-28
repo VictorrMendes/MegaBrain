@@ -39,7 +39,10 @@ Return ONLY valid JSON (no markdown fences, no explanation):
   "need_learning": bool,
   "risk_level": "low" | "medium" | "high" | "critical",
   "confidence": 0.0-1.0,
-  "reason": "one sentence in Portuguese"
+  "reason": "one sentence in Portuguese",
+  "target_capability": "string or null (e.g., 'calendar.create_event', 'docker.ps')",
+  "target_provider": "string or null (e.g., 'google', 'docker')",
+  "capability_params": {}
 }
 
 Rules:
@@ -50,6 +53,7 @@ Rules:
 - Calendar/email/GitHub access → need_integrations=true
 - Always set need_learning=true unless trivial greeting
 - need_memory and need_knowledge default to true
+- IF the user asks to execute a specific action on an integration (e.g. create a meeting, list containers, search emails), populate target_capability, target_provider and capability_params with the specific data.
 """
 
 _PROFILE = ExecutionProfile(
@@ -160,4 +164,7 @@ class DecisionEngine:
             risk_level=risk,
             confidence=float(data.get("confidence", 0.8)),
             reason=str(data.get("reason", "")),
+            target_capability=data.get("target_capability"),
+            target_provider=data.get("target_provider"),
+            capability_params=data.get("capability_params") or {},
         )

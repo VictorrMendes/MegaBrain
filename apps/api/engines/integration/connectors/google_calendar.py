@@ -11,16 +11,19 @@ class GoogleCalendarConnector(BaseConnector):
     async def _get_auth_headers(self) -> Dict[str, str]:
         return {"Authorization": f"Bearer {self.access_token}"}
 
-    async def list_events(self, calendar_id: str = "primary", time_min: Optional[datetime] = None, max_results: int = 10) -> Dict[str, Any]:
+    async def list_events(self, calendar_id: str = "primary", time_min: Optional[str] = None, time_max: Optional[str] = None, max_results: int = 10) -> Dict[str, Any]:
         params = {
             "maxResults": max_results,
             "singleEvents": "true",
             "orderBy": "startTime"
         }
         if time_min:
-            params["timeMin"] = time_min.isoformat()
+            params["timeMin"] = time_min
         else:
             params["timeMin"] = datetime.now(timezone.utc).isoformat()
+            
+        if time_max:
+            params["timeMax"] = time_max
             
         return await self.get(f"/calendars/{calendar_id}/events", params=params)
 

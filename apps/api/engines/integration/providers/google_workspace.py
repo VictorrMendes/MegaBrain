@@ -137,16 +137,13 @@ class GoogleWorkspaceProvider(IntegrationProvider):
             events_response = await connector.list_events(max_results=5)
             events = events_response.get("items", [])
             
-            lines = [f"Eventos agendados no Calendar: {len(events)} próximos"]
-            for event in events:
-                summary = event.get("summary", "Sem título")
-                start = event.get("start", {}).get("dateTime") or event.get("start", {}).get("date")
-                if start:
-                    lines.append(f"- {summary} ({start})")
-                
             return SyncResult(
                 items_synced=len(events),
-                life_context_lines=lines,
+                life_context_lines=[
+                    f"Resumo da Agenda (Google Calendar):",
+                    f"- Eventos recuperados: {len(events)}",
+                    f"- Próximo evento: {events[0].get('summary') if events else 'Nenhum'}"
+                ],
                 metadata={"next_events_count": len(events)}
             )
         except Exception as e:
@@ -187,6 +184,7 @@ class GoogleWorkspaceProvider(IntegrationProvider):
             return await connector.list_events(
                 calendar_id=params.get("calendar_id", "primary"),
                 time_min=params.get("time_min"),
+                time_max=params.get("time_max"),
                 max_results=params.get("max_results", 10)
             )
         elif capability == "calendar.get_event":
@@ -195,8 +193,10 @@ class GoogleWorkspaceProvider(IntegrationProvider):
                 calendar_id=params.get("calendar_id", "primary")
             )
         elif capability == "calendar.create_event":
+            # Normalize event_data which could be passed inside params or as params itself
+            event_data = params.get("event_data", params)
             return await connector.create_event(
-                event_data=params["event_data"],
+                event_data=event_data,
                 calendar_id=params.get("calendar_id", "primary")
             )
         elif capability == "calendar.update_event":

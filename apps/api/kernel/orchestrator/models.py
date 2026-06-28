@@ -52,6 +52,10 @@ class Decision:
     estimated_cost: float = 0.0
     estimated_latency: float = 0.0
     reason: str = ""
+    target_capability: str | None = None
+    target_provider: str | None = None
+    capability_params: dict = field(default_factory=dict)
+
 
 
 @dataclass

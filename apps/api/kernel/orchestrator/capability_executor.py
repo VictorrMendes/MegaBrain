@@ -41,6 +41,7 @@ class CapabilityResult:
     weather_summary: str = ""
     email_summary: str = ""
     checkup_summary: str = ""
+    generic_summary: str = ""
     missions_created: list[str] = field(default_factory=list)
     capabilities_used: list[str] = field(default_factory=list)
     internet_sources: int = 0
@@ -54,6 +55,7 @@ class CapabilityResult:
             or self.weather_summary
             or self.email_summary
             or self.checkup_summary
+            or self.generic_summary
         )
 
     def to_prompt_sections(self) -> list[str]:
@@ -126,6 +128,11 @@ class CapabilityResult:
                 f"## Status do Sistema\n{self.checkup_summary}"
             )
 
+        if self.generic_summary:
+            sections.append(
+                f"## Resultado da Execução\n{self.generic_summary}"
+            )
+
         return sections
 
 
@@ -162,7 +169,7 @@ class CapabilityExecutor:
             message, workspace_id, decision, intent, trace, result
         )
         await self._run_integrations(
-            workspace_id, intent, trace, result
+            workspace_id, decision, intent, trace, result
         )
         await self._run_mission(
             message, workspace_id, decision, intent, trace,
@@ -234,16 +241,36 @@ class CapabilityExecutor:
     # ------------------------------------------------------------------ #
 
     async def _run_integrations(
-        self, workspace_id, intent, trace, result
+        self, workspace_id, decision, intent, trace, result
     ) -> None:
-        if not intent.need_integrations:
+        if not intent.need_integrations and not decision.target_capability:
             return
 
         node = trace.begin("integrations", "IntegrationManager")
         try:
             caps: list[str] = []
 
-            if intent.need_docker:
+            # RC-18B: Execução Genérica Dinâmica
+            if decision.target_capability and decision.target_provider:
+                try:
+                    data = await self._integrations.execute_capability(
+                        workspace_id,
+                        decision.target_provider,
+                        decision.target_capability,
+                        decision.capability_params
+                    )
+                    import json
+                    result.generic_summary = f"Execução concluída. Capability '{decision.target_capability}'. Retorno:\n```json\n{json.dumps(data, indent=2, ensure_ascii=False)}\n```"
+                    caps.append(decision.target_capability)
+                except Exception as exc:
+                    result.generic_summary = f"Erro ao executar capability '{decision.target_capability}': {exc}"
+                    logger.warning(
+                        "capability_executor.generic_execution_failed",
+                        capability=decision.target_capability,
+                        error=str(exc)
+                    )
+
+            if intent.need_docker and not decision.target_capability:
                 try:
                     data = await self._integrations.execute_capability(
                         workspace_id, "docker", "docker.list_containers", {}
@@ -266,7 +293,7 @@ class CapabilityExecutor:
                 if summary:
                     caps.append("docker")
 
-            if intent.need_weather:
+            if intent.need_weather and not decision.target_capability:
                 summary = await self._query_integration(
                     workspace_id, "weather", "clima"
                 )
@@ -274,7 +301,7 @@ class CapabilityExecutor:
                 if summary:
                     caps.append("weather")
 
-            if intent.need_calendar:
+            if intent.need_calendar and not decision.target_capability:
                 summary = await self._query_integration(
                     workspace_id, "calendar", "agenda"
                 )
@@ -282,7 +309,7 @@ class CapabilityExecutor:
                 if summary:
                     caps.append("calendar")
 
-            if intent.need_email:
+            if intent.need_email and not decision.target_capability:
                 summary = await self._query_integration(
                     workspace_id, "email", "e-mails"
                 )
