@@ -159,3 +159,5 @@ app.include_router(admin_router)
 app.include_router(oauth_router)
 app.include_router(observability_router)
 
+from routers.webhooks import router as webhooks_router
+app.include_router(webhooks_router)

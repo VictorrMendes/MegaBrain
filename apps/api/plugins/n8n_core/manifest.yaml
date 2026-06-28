@@ -1,0 +1,7 @@
+name: n8n_core
+version: 1.0.0
+description: Official n8n provider plugin for Khonshu.
+driver: rest_n8n
+capabilities_dir: capabilities
+schemas_dir: schemas
+assets_dir: assets

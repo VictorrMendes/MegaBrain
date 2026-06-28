@@ -1,0 +1,23 @@
+capability: communication.send_message
+version: 1
+provider: rest_execution_provider
+workflow_tag: communication.send_message
+approval: WRITE
+risk: LOW
+timeout: 30
+async: false
+idempotent: true
+cache_policy: NONE
+description: Envia mensagens para contatos do usuário (WhatsApp, Telegram, etc).
+input:
+  phone:
+    type: string
+    required: true
+  message:
+    type: string
+    required: true
+output:
+  message_id:
+    type: string
+  status:
+    type: string

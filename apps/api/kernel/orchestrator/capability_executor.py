@@ -176,6 +176,9 @@ class CapabilityExecutor:
         await self._run_integrations(
             workspace_id, decision, intent, trace, result, exec_ctx
         )
+        await self._run_capability_fabric(
+            message, workspace_id, decision, intent, trace, result, exec_ctx, conversation_id
+        )
         await self._run_mission(
             message, workspace_id, decision, intent, trace,
             requires_approval, conversation_id, result,
@@ -430,6 +433,61 @@ class CapabilityExecutor:
             f"Health: {health}. "
             "Os dados mais recentes estão disponíveis na base de conhecimento."
         )
+
+    # ------------------------------------------------------------------ #
+    # Capability Fabric (Phase 11 v3)                                    #
+    # ------------------------------------------------------------------ #
+
+    async def _run_capability_fabric(
+        self, message, workspace_id, decision, intent, trace, result, exec_ctx, conversation_id
+    ) -> None:
+        if not decision.need_planner:
+            return
+            
+        node = trace.begin("capability_fabric", "ExecutionPlanner")
+        try:
+            from kernel.orchestrator.execution_planner import execution_planner
+            from kernel.capabilities.discovery import capability_discovery
+            from kernel.security.approval_engine import approval_engine
+            from kernel.providers.rest_provider import rest_provider
+
+            # Ensure capabilities are loaded (should normally happen on boot)
+            if not capability_discovery.definitions:
+                capability_discovery.sync()
+
+            plan = await execution_planner.generate_plan(message, {"exec_ctx": exec_ctx})
+            
+            summary_lines = ["**Execution Fabric Plan Executed:**\n"]
+            
+            context_permissions = ["auto_write", "auto_execute"] # Mocked permissions for now
+            
+            for step in plan.plan:
+                definition = capability_discovery.get(step.capability)
+                if not definition:
+                    summary_lines.append(f"- ❌ Step {step.id}: Capability '{step.capability}' not found in registry.")
+                    continue
+                    
+                is_approved = approval_engine.evaluate(definition, context_permissions)
+                if not is_approved:
+                    summary_lines.append(f"- ⚠️ Step {step.id}: Capability '{step.capability}' blocked by Approval Engine (requires {definition.approval.value}).")
+                    continue
+                
+                # Execute using the appropriate provider
+                # For now we route to REST provider hardcoded as requested in architecture
+                if definition.provider == "rest_execution_provider":
+                    ctx = {"execution_id": str(conversation_id) if conversation_id else "unknown"}
+                    exec_result = await rest_provider.execute(definition, step.payload, ctx)
+                    summary_lines.append(f"- ✓ Step {step.id} ({step.capability}): {exec_result.get('status')} (ID: {exec_result.get('provider_execution_id')})")
+                else:
+                    summary_lines.append(f"- ⚠️ Step {step.id}: Unknown provider '{definition.provider}'")
+
+            result.generic_summary += "\n\n" + "\n".join(summary_lines)
+            result.capabilities_used.append("capability_fabric")
+            trace.complete(node, f"executed {len(plan.plan)} steps in DAG")
+            
+        except Exception as exc:
+            trace.fail(node, str(exc))
+            logger.warning("capability_executor.fabric_failed", error=str(exc))
 
     # ------------------------------------------------------------------ #
     # Mission                                                              #

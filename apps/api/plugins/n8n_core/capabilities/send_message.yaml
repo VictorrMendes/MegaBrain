@@ -1,0 +1,21 @@
+name: n8n.communication.send_message
+abstract_intent: SendMessage
+description: Envia uma mensagem de texto usando os canais configurados no n8n.
+driver: rest_n8n
+endpoint: /webhook/communication/send_message
+method: POST
+schema:
+  type: object
+  properties:
+    recipient:
+      type: string
+      description: O contato, número ou canal de destino.
+    message:
+      type: string
+      description: O conteúdo da mensagem.
+    channel:
+      type: string
+      description: O canal (whatsapp, telegram, etc). Opcional.
+  required:
+    - recipient
+    - message

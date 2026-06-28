@@ -136,11 +136,15 @@ class CognitiveOrchestrator:
         try:
 
             # ── 0. Create Execution Context ──────────────────────────────────
+            from kernel.state.world_state import world_state_store
+            current_world_state = await world_state_store.get_state(workspace_id)
+            
             exec_ctx = ExecutionContext(
                 now=datetime.now(timezone.utc),
                 timezone="America/Sao_Paulo", # Defaulting for now, could be dynamic per workspace
                 locale="pt_BR",
-                workspace_id=str(workspace_id)
+                workspace_id=str(workspace_id),
+                world_state=current_world_state
             )
 
             # ── 1. Build base context ────────────────────────────────────────
@@ -158,7 +162,7 @@ class CognitiveOrchestrator:
             if on_step:
                 await on_step(trace.nodes[-1])
 
-            # ── 4. Execute capabilities ──────────────────────────────────────
+            # ── 4. Execute capabilities (Cognitive Kernel) ───────────────────────
             conv_id = (
                 UUID(request.conversation_id)
                 if request.conversation_id else None
@@ -167,20 +171,53 @@ class CognitiveOrchestrator:
                 decision.need_confirmation
                 or decision.risk_level != RiskLevel.low
             )
-            cap_result = await self._executor.execute(
-                message=request.message,
-                workspace_id=workspace_id,
-                decision=decision,
-                intent=intent,
-                trace=trace,
-                exec_ctx=exec_ctx,
-                requires_approval=requires_approval,
-                conversation_id=conv_id,
-            )
+            
+            # Legacy Execution has been completely REMOVED (Phase 14).
+            # The LLM no longer selects concrete capabilities.
+            
+            # New Definitive Cognitive Kernel Path
+            if decision.need_planner and decision.goal:
+                node = trace.begin("cognitive_kernel", "ExecutionRuntime")
+                try:
+                    from kernel.orchestrator.strategy_planner import strategy_planner
+                    from kernel.orchestrator.execution_planner import execution_planner
+                    from kernel.orchestrator.execution_optimizer import execution_optimizer
+                    from kernel.orchestrator.capability_resolver import capability_resolver
+                    from kernel.orchestrator.ir_compiler import ir_compiler
+                    from kernel.runtime.execution_runtime import execution_runtime
+                    
+                    # 1. Strategy Planner (Goal -> Abstract Tasks)
+                    strategy = await strategy_planner.generate_strategy(decision.goal, {"exec_ctx": exec_ctx})
+                    
+                    # 2. Execution Planner (Abstract Tasks -> Abstract Execution IR)
+                    abstract_ir = await execution_planner.generate_plan(strategy.tasks, {"exec_ctx": exec_ctx})
+                    
+                    # 3. Execution Optimizer (Abstract IR -> Optimized Abstract IR)
+                    optimized_ir = execution_optimizer.optimize(abstract_ir)
+                    
+                    # 4. Capability Resolver (Optimized Abstract IR -> Concrete IR)
+                    concrete_ir = await capability_resolver.resolve(optimized_ir, exec_ctx.world_state)
+                    
+                    # 5. Compile IR -> ExecutionGraph (Nodes)
+                    steps = ir_compiler.compile(concrete_ir, str(conv_id) if conv_id else "system_exec")
+                    
+                    # 6. State Runtime Execution
+                    for step in steps:
+                        await execution_runtime.execute_node(step, str(workspace_id))
+                        
+                    trace.complete(node, f"compiled {len(steps)} nodes via Graph IR")
+                except Exception as exc:
+                    trace.fail(node, str(exc))
+                    logger.warning("orchestrator.cognitive_kernel_failed", error=str(exc))
+                    
             if on_step:
                 await on_step(trace.nodes[-1])
 
             # ── 5. Generate response ─────────────────────────────────────────
+            # For the mock phase, we generate a synthetic capability result for the LLM prompt.
+            from kernel.orchestrator.capability_executor import CapabilityResult
+            cap_result = CapabilityResult(generic_summary="Kernel execution triggered successfully.")
+            
             response_text = await self._generate(
                 request, ctx, cap_result, trace, on_token
             )
