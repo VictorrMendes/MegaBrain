@@ -325,21 +325,21 @@ class CognitiveOrchestrator:
                     violated_cap = "search"
                     break
 
-        if cap_result.docker_summary and not invalid:
+        if (cap_result.docker_summary or (cap_result.generic_summary and "docker" in cap_result.generic_summary.lower())) and not invalid:
             for pattern in _INVALID_DOCKER_PHRASES:
                 if re.search(pattern, response, re.IGNORECASE):
                     invalid = True
                     violated_cap = "docker"
                     break
 
-        if cap_result.calendar_summary and not invalid:
+        if (cap_result.calendar_summary or (cap_result.generic_summary and "calendar" in cap_result.generic_summary.lower())) and not invalid:
             for pattern in _INVALID_CALENDAR_PHRASES:
                 if re.search(pattern, response, re.IGNORECASE):
                     invalid = True
                     violated_cap = "calendar"
                     break
 
-        if cap_result.weather_summary and not invalid:
+        if (cap_result.weather_summary or (cap_result.generic_summary and "weather" in cap_result.generic_summary.lower())) and not invalid:
             for pattern in _INVALID_WEATHER_PHRASES:
                 if re.search(pattern, response, re.IGNORECASE):
                     invalid = True

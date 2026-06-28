@@ -54,6 +54,14 @@ Rules:
 - Always set need_learning=true unless trivial greeting
 - need_memory and need_knowledge default to true
 - IF the user asks to execute a specific action on an integration (e.g. create a meeting, list containers, search emails), populate target_capability, target_provider and capability_params with the specific data.
+- VALID CAPABILITIES FOR GOOGLE (target_provider="google"):
+  - "calendar.list_events" (params: time_min, time_max, max_results)
+  - "calendar.get_event" (params: event_id)
+  - "calendar.create_event" (params: summary, start, end, etc)
+  - "calendar.update_event" (params: event_id, event_data)
+  - "calendar.delete_event" (params: event_id)
+- VALID CAPABILITIES FOR DOCKER (target_provider="docker"):
+  - "docker.list_containers"
 """
 
 _PROFILE = ExecutionProfile(

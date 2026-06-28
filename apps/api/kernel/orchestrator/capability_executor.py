@@ -130,7 +130,11 @@ class CapabilityResult:
 
         if self.generic_summary:
             sections.append(
-                f"## Resultado da Execução\n{self.generic_summary}"
+                f"## Resultados obtidos agora pelo Kernel (Execução de Integração)\n"
+                f"{self.generic_summary}\n\n"
+                "Use estes resultados como fonte exclusiva da resposta para esta integração. "
+                "Se o resultado for um erro (ex: success=false ou error), informe exatamente o erro reportado. "
+                "Não afirme limitações de acesso se os resultados estiverem presentes e forem válidos."
             )
 
         return sections
