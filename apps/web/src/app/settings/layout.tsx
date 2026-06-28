@@ -1,5 +1,4 @@
 import { SettingsSidebar } from "@/components/settings/sidebar"
-import { TopBar } from "@/components/shell/TopBar"
 
 export default function SettingsLayout({
   children,
@@ -8,7 +7,9 @@ export default function SettingsLayout({
 }) {
   return (
     <div className="flex h-screen w-full flex-col">
-      <TopBar title="System Settings" />
+      <header className="flex h-14 items-center border-b border-white/10 bg-black/40 px-6 font-medium text-white">
+        System Settings
+      </header>
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-64 border-r border-border/10 bg-black/40">
           <SettingsSidebar />
