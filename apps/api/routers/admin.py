@@ -9,7 +9,7 @@ from core.database import get_db
 from models.integration import IntegrationSecret
 from engines.integration.identity.token_manager import token_manager
 
-router = APIRouter(prefix="/api/admin/secrets", tags=["admin", "secrets"])
+router = APIRouter(prefix="/admin/secrets", tags=["admin", "secrets"])
 
 class SecretPayload(BaseModel):
     provider: str
