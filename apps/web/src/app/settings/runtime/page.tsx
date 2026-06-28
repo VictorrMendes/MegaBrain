@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react"
 import { Play, Brain, Check, ShieldAlert, Cpu, Bot, ArrowRight, Loader2, AlertTriangle, ChevronDown, ChevronRight, XCircle, FastForward } from "lucide-react"
-import { format } from "date-fns"
 
 interface TraceEvent {
   trace_id: string
@@ -167,7 +166,7 @@ function TraceBlock({ trace }: { trace: TraceGroup }) {
               <span className="text-xs font-mono text-white/40">{trace.trace_id.split("-")[0]}</span>
             </div>
             <div className="text-xs text-white/50 mt-0.5">
-              {format(new Date(trace.started_at), 'HH:mm:ss.SSS')}
+              {new Date(trace.started_at).toISOString().split('T')[1].replace('Z', '')}
             </div>
           </div>
         </div>
