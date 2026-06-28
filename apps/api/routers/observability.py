@@ -21,7 +21,7 @@ async def get_metrics(db: AsyncSession = Depends(get_db)):
     oauth_errors = result.scalar_one()
     
     # Avg API Latency
-    execution_stats = runtime.cognitive_metrics._execution.to_dict()
+    execution_stats = runtime.metrics._execution.to_dict()
     avg_latency = execution_stats.get("avg_ms", 0.0)
     
     return {
