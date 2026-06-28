@@ -15,7 +15,7 @@ from .mission import (
 )
 from .obsidian import ObsidianLink, ObsidianNote
 from .briefing import Briefing
-from .integration import ConnectedAccount, Integration, SyncRecord
+from .integration import ConnectedAccount, Integration, SyncRecord, IntegrationSecret
 from .workspace import Workspace
 from .workspace_plugin import WorkspacePlugin
 from .workspace_session import WorkspaceSession
@@ -28,6 +28,7 @@ __all__ = [
     "Integration",
     "ConnectedAccount",
     "SyncRecord",
+    "IntegrationSecret",
     "Memory",
     "MemoryType",
     "Conversation",
