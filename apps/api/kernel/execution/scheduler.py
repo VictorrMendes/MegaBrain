@@ -11,7 +11,7 @@ class Scheduler:
     Sits between the Runtime (which computes state) and Dispatcher (which executes).
     """
     
-    async def schedule(self, node: ExecutionNode, workspace_id: str) -> None:
+    async def schedule(self, node: ExecutionStep, workspace_id: str) -> None:
         """
         Determines when and how to dispatch a node.
         If a node is WAITING, it might put it in PAUSED state.
