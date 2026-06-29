@@ -131,6 +131,27 @@ class DecisionEngine:
         self, message: str, exec_ctx: ExecutionContext | None = None
     ) -> Decision:
         """Analyze message and return routing Decision."""
+        from kernel.plugins.plugin_manager import plugin_manager
+        
+        if not plugin_manager.plugins:
+            plugin_manager.load_all()
+            
+        caps_list = []
+        for plugin in plugin_manager.plugins.values():
+            for cap_name, cap_data in plugin.get("loaded_capabilities", {}).items():
+                desc = cap_data.get("description", "")
+                caps_list.append(f"  - \"{cap_name}\": {desc}")
+                
+        caps_str = "\n".join(caps_list)
+
+        dynamic_system = _SYSTEM.replace(
+            "- VALID CAPABILITIES FOR GOOGLE (target_provider=\"google\"):",
+            "- VALID CAPABILITIES (target_provider=\"n8n\"):\n" + caps_str
+        )
+        
+        # Remove the hardcoded docker section
+        dynamic_system = dynamic_system.split("- VALID CAPABILITIES FOR DOCKER")[0]
+
         user_content = f"Message: {message}"
         if exec_ctx:
             user_content += f"\n\nContext:\n- Current Time: {exec_ctx.now.isoformat()}\n- Timezone: {exec_ctx.timezone}"
@@ -139,7 +160,7 @@ class DecisionEngine:
         try:
             result = await self._llm.chat(
                 messages=[
-                    ChatMessage(role="system", content=_SYSTEM),
+                    ChatMessage(role="system", content=dynamic_system),
                     ChatMessage(role="user", content=user_content),
                 ],
                 profile=_PROFILE,
