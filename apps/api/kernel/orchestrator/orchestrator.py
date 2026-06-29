@@ -213,10 +213,10 @@ class CognitiveOrchestrator:
                     results = []
                     for step in steps:
                         await execution_runtime.execute_node(step, str(workspace_id))
-                        if step.error:
+                        if getattr(step, 'error', None):
                             results.append(f"Action '{step.capability}' failed: {step.error}")
                         else:
-                            results.append(f"Action '{step.capability}' result: {step.result}")
+                            results.append(f"Action '{step.capability}' result: {getattr(step, 'result', step.output)}")
                             
                     cap_result = CapabilityResult(
                         generic_summary="\\n".join(results) if results else "Kernel execution completed with no output.",
