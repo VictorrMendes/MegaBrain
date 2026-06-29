@@ -43,7 +43,15 @@ class RestN8NDriver(ExecutionDriver):
                 response = await client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
                 
-                node.result = response.json() if response.text else {"status": "success"}
+                if not response.text:
+                    raise Exception("A execução no n8n não retornou resposta (body vazio). O workflow pode ter falhado ou o nó 'Respond to Webhook' está faltando.")
+                
+                result_data = response.json()
+                if isinstance(result_data, dict) and result_data.get("success") is False:
+                    error_msg = result_data.get("error", "Erro desconhecido retornado pelo n8n.")
+                    raise Exception(f"Erro no n8n: {error_msg}")
+                    
+                node.result = result_data
                 logger.info("driver.rest_n8n.success", node_id=str(node.id))
                 
         except Exception as e:
