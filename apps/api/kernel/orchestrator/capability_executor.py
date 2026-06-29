@@ -129,13 +129,23 @@ class CapabilityResult:
             )
 
         if self.generic_summary:
-            sections.append(
-                f"## Resultados obtidos agora pelo Kernel (Execução de Integração)\n"
-                f"{self.generic_summary}\n\n"
-                "Use estes resultados como fonte exclusiva da resposta para esta integração. "
-                "Se o resultado for um erro (ex: success=false ou error), informe exatamente o erro reportado. "
-                "Não afirme limitações de acesso se os resultados estiverem presentes e forem válidos."
-            )
+            lower_summary = self.generic_summary.lower()
+            if "failed" in lower_summary or "erro" in lower_summary:
+                sections.append(
+                    f"## [CRITICAL ERROR] Falha na Execução pelo Kernel\n"
+                    f"{self.generic_summary}\n\n"
+                    "INSTRUÇÃO CRÍTICA: A execução DA FERRAMENTA FALHOU. "
+                    "Você DEVE pedir desculpas e informar ao usuário exatamente o motivo do erro acima. "
+                    "SOB NENHUMA HIPÓTESE diga que a ação foi concluída com sucesso."
+                )
+            else:
+                sections.append(
+                    f"## Resultados obtidos agora pelo Kernel (Execução de Integração)\n"
+                    f"{self.generic_summary}\n\n"
+                    "Use estes resultados como fonte exclusiva da resposta para esta integração. "
+                    "Se o resultado for um erro (ex: success=false ou error), informe exatamente o erro reportado. "
+                    "Não afirme limitações de acesso se os resultados estiverem presentes e forem válidos."
+                )
 
         return sections
 
