@@ -16,6 +16,9 @@ Analise a conversa abaixo e extraia APENAS fatos novos e relevantes sobre o usu�
 Inclua: preferências, informações pessoais, compromissos futuros, hábitos, estado financeiro, tarefas, rotinas.
 Ignore saudações genéricas, perguntas sobre assuntos gerais sem relação com o usuário, e conversas sem informação nova.
 
+MUITO IMPORTANTE: O conteúdo das memórias (campo "content") DEVE ser escrito sempre em PORTUGUÊS (PT-BR).
+
+
 Classifique cada memória com um domínio:
 - task: tarefas, to-dos, compromissos pontuais
 - finance: finanças, gastos, receitas, investimentos, dívidas
