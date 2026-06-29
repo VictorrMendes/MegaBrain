@@ -7,4 +7,5 @@ method: POST
 schema:
   type: object
   properties:
-    path: string
+    path:
+      type: string

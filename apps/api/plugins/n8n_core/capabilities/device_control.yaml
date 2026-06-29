@@ -7,6 +7,9 @@ method: POST
 schema:
   type: object
   properties:
-    device_id: string
-    action: string
-    value: string
+    device_id:
+      type: string
+    action:
+      type: string
+    value:
+      type: string

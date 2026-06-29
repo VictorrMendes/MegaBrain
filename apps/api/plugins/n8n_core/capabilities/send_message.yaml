@@ -1,5 +1,6 @@
 name: n8n.communication.send_message
-description: Sends a generic message via a messaging platform (e.g. WhatsApp, Slack, Telegram).
+description: Sends a generic message via a messaging platform (e.g. WhatsApp, Slack,
+  Telegram).
 abstract_intent: communication.send_message
 schema:
   type: object
@@ -7,7 +8,10 @@ schema:
     provider:
       type: string
       description: The provider to use (e.g. whatsapp/evolution, slack, telegram).
-      enum: [evolution, slack, telegram]
+      enum:
+      - evolution
+      - slack
+      - telegram
     chat_id:
       type: string
       description: The chat ID if sending via Telegram.
@@ -17,4 +21,6 @@ schema:
     message:
       type: string
       description: The content of the message.
-  required: [message, provider]
+  required:
+  - message
+  - provider

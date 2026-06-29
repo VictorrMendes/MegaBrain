@@ -7,5 +7,7 @@ method: POST
 schema:
   type: object
   properties:
-    container_id: string
-    action: string
+    container_id:
+      type: string
+    action:
+      type: string

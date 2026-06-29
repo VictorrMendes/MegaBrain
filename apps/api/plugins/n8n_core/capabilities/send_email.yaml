@@ -7,6 +7,13 @@ method: POST
 schema:
   type: object
   properties:
-    to: string
-    subject: string
-    body: string
+    to:
+      type: string
+    subject:
+      type: string
+    body:
+      type: string
+  required:
+  - to
+  - subject
+  - body

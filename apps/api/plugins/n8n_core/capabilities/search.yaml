@@ -7,4 +7,5 @@ method: POST
 schema:
   type: object
   properties:
-    query: string
+    query:
+      type: string

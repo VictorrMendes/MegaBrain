@@ -7,6 +7,9 @@ method: POST
 schema:
   type: object
   properties:
-    title: string
-    start_time: string
-    end_time: string
+    title:
+      type: string
+    start_time:
+      type: string
+    end_time:
+      type: string
