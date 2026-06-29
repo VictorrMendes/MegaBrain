@@ -1,9 +1,9 @@
 import httpx
 import os
 from typing import Any
-from models.execution import ExecutionNode
+from models.execution import ExecutionStep
 from kernel.logger import get_logger
-from kernel.runtime.dispatcher import ExecutionDriver, dispatcher
+from kernel.execution.dispatcher import ExecutionDriver, dispatcher
 
 logger = get_logger(__name__)
 
@@ -17,7 +17,7 @@ class RestN8NDriver(ExecutionDriver):
         self.auth_token = os.getenv("N8N_AUTH_TOKEN", "")
         self.test_mode = os.getenv("N8N_TEST_MODE", "true").lower() == "true" # Default true during development
 
-    async def execute(self, node: ExecutionNode, workspace_id: str) -> None:
+    async def execute(self, node: ExecutionStep, workspace_id: str) -> None:
         logger.info("driver.rest_n8n.executing", capability=node.capability, node_id=str(node.id))
         
         # In a real implementation, the endpoint and method would come from the capability definition.

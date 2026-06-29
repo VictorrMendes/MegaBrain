@@ -1,12 +1,13 @@
 from typing import Any, Dict
-from models.execution import Execution, ExecutionStatus, ExecutionNode, StepStatus
-from kernel.runtime.middlewares import (
+from models.execution import Execution, ExecutionStatus, ExecutionStep, StepStatus
+from kernel.execution.middlewares import (
     MiddlewareContext, 
     approval_middleware, 
     audit_middleware, 
     rate_limit_middleware
 )
-from kernel.runtime.scheduler import scheduler
+from kernel.logger import get_logger
+from kernel.execution.scheduler import scheduler
 
 class ExecutionRuntime:
     """
@@ -22,7 +23,7 @@ class ExecutionRuntime:
             audit_middleware
         ]
 
-    async def execute_node(self, node: ExecutionNode, workspace_id: str) -> None:
+    async def execute_node(self, node: ExecutionStep, workspace_id: str) -> None:
         """
         Executes a single node in the Execution Graph.
         """
