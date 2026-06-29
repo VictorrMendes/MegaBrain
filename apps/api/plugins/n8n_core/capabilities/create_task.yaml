@@ -7,7 +7,14 @@ method: POST
 schema:
   type: object
   properties:
+    provider:
+      type: string
+      description: The provider to use for the task (e.g. todoist, notion).
+      enum: [todoist, notion]
     title:
       type: string
+      description: The title or content of the task.
     description:
       type: string
+      description: Additional details or description for the task.
+  required: [provider, title]
