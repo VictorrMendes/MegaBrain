@@ -1,0 +1,16 @@
+name: n8n.communication.send_message
+description: Sends a generic message via a messaging platform (e.g. WhatsApp, Slack, Telegram).
+abstract_intent: communication.send_message
+schema:
+  type: object
+  properties:
+    platform:
+      type: string
+      description: The platform to send the message to (e.g. whatsapp, slack).
+    recipient:
+      type: string
+      description: The contact, phone number, or user id to send to.
+    message:
+      type: string
+      description: The content of the message.
+  required: [message, recipient]
