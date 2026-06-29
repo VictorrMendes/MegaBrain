@@ -27,6 +27,9 @@ class ExecutionPlanner:
             return self._fallback(strategy_tasks)
 
         # Collect capabilities
+        if not plugin_manager.plugins:
+            plugin_manager.load_all()
+            
         caps = []
         for plugin in plugin_manager.plugins.values():
             for cap_name, cap_data in plugin.get("loaded_capabilities", {}).items():
