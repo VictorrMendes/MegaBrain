@@ -1,5 +1,10 @@
+import json
 from dataclasses import dataclass, field
 from typing import List, Dict, Any
+from kernel.logger import get_logger
+from kernel.providers.base import LLMProvider, ChatMessage
+
+logger = get_logger(__name__)
 
 @dataclass
 class AbstractTask:
@@ -21,21 +26,51 @@ class StrategyPlanner:
     """
 
     async def generate_strategy(self, goal: str, context: Dict[str, Any]) -> StrategyPlan:
-        # Mocking the LLM translation of a goal to tasks
-        # e.g., "Organize minha mudança" -> [Pesquisar imóveis, Pesquisar caminhão, etc]
-        goal_lower = goal.lower()
-        if "calendar" in goal_lower or "calendário" in goal_lower or "agenda" in goal_lower:
-            return StrategyPlan(
-                goal=goal,
-                tasks=[AbstractTask(id="task_1", description="Fetch calendar events")]
-            )
+        llm: LLMProvider | None = context.get("llm")
+        if not llm:
+            logger.warning("strategy_planner.no_llm_fallback")
+            return StrategyPlan(goal=goal, tasks=[AbstractTask(id="task_1", description=goal)])
+
+        system_prompt = '''You are the Strategy Planner. 
+Break the following user goal into discrete abstract tasks.
+Output ONLY valid JSON matching this schema:
+{
+  "tasks": [
+    {
+      "id": "task_1",
+      "description": "Clear description of the action",
+      "dependencies": []
+    }
+  ]
+}'''
+        
+        try:
+            result = await llm.chat([
+                ChatMessage(role="system", content=system_prompt),
+                ChatMessage(role="user", content=f"Goal: {goal}")
+            ])
             
-        return StrategyPlan(
-            goal=goal,
-            tasks=[
-                AbstractTask(id="task_1", description="Understand the goal"),
-                AbstractTask(id="task_2", description="Execute steps for the goal", dependencies=["task_1"]),
-            ]
-        )
+            content = result.content
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].strip()
+                
+            data = json.loads(content)
+            tasks = []
+            for t in data.get("tasks", []):
+                tasks.append(AbstractTask(
+                    id=t.get("id", "task_unknown"),
+                    description=t.get("description", "Unknown task"),
+                    dependencies=t.get("dependencies", [])
+                ))
+                
+            logger.info("strategy_planner.success", num_tasks=len(tasks))
+            return StrategyPlan(goal=goal, tasks=tasks)
+            
+        except Exception as e:
+            logger.error("strategy_planner.failed", error=str(e))
+            # Fallback to single generic task
+            return StrategyPlan(goal=goal, tasks=[AbstractTask(id="task_1", description=goal)])
 
 strategy_planner = StrategyPlanner()

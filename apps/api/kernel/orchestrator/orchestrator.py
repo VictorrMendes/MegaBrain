@@ -195,10 +195,10 @@ class CognitiveOrchestrator:
                     from kernel.execution.execution_runtime import execution_runtime
                     
                     # 1. Strategy Planner (Goal -> Abstract Tasks)
-                    strategy = await strategy_planner.generate_strategy(goal, {"exec_ctx": exec_ctx})
+                    strategy = await strategy_planner.generate_strategy(goal, {"exec_ctx": exec_ctx, "llm": self._llm})
                     
                     # 2. Execution Planner (Abstract Tasks -> Abstract Execution IR)
-                    abstract_ir = await execution_planner.generate_plan(strategy.tasks, {"exec_ctx": exec_ctx})
+                    abstract_ir = await execution_planner.generate_plan(strategy.tasks, {"exec_ctx": exec_ctx, "llm": self._llm})
                     
                     # 3. Execution Optimizer (Abstract IR -> Optimized Abstract IR)
                     optimized_ir = execution_optimizer.optimize(abstract_ir)
