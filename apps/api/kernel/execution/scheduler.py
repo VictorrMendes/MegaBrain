@@ -17,26 +17,27 @@ class Scheduler:
         If a node is WAITING, it might put it in PAUSED state.
         If a node is READY, it moves it to RUNNING and dispatches.
         """
-        logger.info("scheduler.processing", node_id=node.id, status=node.status.value)
+        current_status = node.status if node.status is not None else StepStatus.PENDING.value
+        logger.info("scheduler.processing", node_id=node.id, status=current_status)
         
-        if node.status == StepStatus.READY:
-            node.status = StepStatus.RUNNING
+        if current_status == StepStatus.READY or current_status == StepStatus.PENDING.value:
+            node.status = StepStatus.RUNNING.value
             # Transition to RUNNING and hand off to dispatcher immediately
             await dispatcher.dispatch(node, workspace_id)
             
-        elif node.status == StepStatus.WAITING:
+        elif current_status == StepStatus.WAITING:
             # E.g. waiting for a webhook or approval
-            node.status = StepStatus.PAUSED
+            node.status = StepStatus.PAUSED.value
             logger.info("scheduler.paused", node_id=node.id, reason="waiting for event")
             
-        elif node.status == StepStatus.RETRYING:
+        elif current_status == StepStatus.RETRYING:
             # E.g. apply exponential backoff before dispatching again
             logger.info("scheduler.backoff", node_id=node.id, attempt=node.retry_count)
             # await asyncio.sleep(backoff_time)
-            node.status = StepStatus.RUNNING
+            node.status = StepStatus.RUNNING.value
             await dispatcher.dispatch(node, workspace_id)
             
         else:
-            logger.warning("scheduler.ignored", node_id=node.id, status=node.status.value)
+            logger.warning("scheduler.ignored", node_id=node.id, status=current_status)
 
 scheduler = Scheduler()

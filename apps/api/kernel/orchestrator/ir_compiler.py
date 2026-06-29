@@ -1,3 +1,4 @@
+import uuid
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
@@ -64,6 +65,7 @@ class IRCompiler:
         if node.type == "TASK":
             task = node # type: IRTaskNode
             step = ExecutionStep(
+                id=uuid.uuid4(),
                 execution_id=execution_id,
                 capability=task.capability,
                 payload=task.payload,
