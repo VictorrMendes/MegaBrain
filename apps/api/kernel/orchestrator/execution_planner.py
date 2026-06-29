@@ -46,6 +46,7 @@ class ExecutionPlanner:
 Map the following abstract tasks to the best available capabilities.
 For each task, select exactly ONE capability name from the available capabilities.
 CRITICAL: You MUST extract the relevant information from the task description and populate the `payload` object with the fields defined in the capability's `schema`.
+CRITICAL: If a schema property specifies an 'enum', you MUST select the value that explicitly matches the user's request in the task description. NEVER guess randomly.
 
 Available Capabilities:
 {caps_json}
