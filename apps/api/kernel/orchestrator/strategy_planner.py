@@ -42,7 +42,8 @@ Output ONLY valid JSON matching this schema:
       "dependencies": []
     }
   ]
-}'''
+}
+IMPORTANT: Ensure you include all specific tools, platforms, or apps mentioned by the user in the 'description' (e.g. 'todoist', 'notion'). Do not replace them.'''
         
         try:
             result = await llm.chat([

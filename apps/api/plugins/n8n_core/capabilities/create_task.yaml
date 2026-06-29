@@ -9,7 +9,7 @@ schema:
   properties:
     provider:
       type: string
-      description: The provider to use for the task (e.g. todoist, notion).
+      description: "MANDATORY: You must extract the provider from the user's text. If the text says 'todoist', value is 'todoist'. If the text says 'notion', value is 'notion'. Do not default to notion."
       enum: [todoist, notion]
     title:
       type: string
