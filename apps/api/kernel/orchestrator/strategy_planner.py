@@ -23,6 +23,13 @@ class StrategyPlanner:
     async def generate_strategy(self, goal: str, context: Dict[str, Any]) -> StrategyPlan:
         # Mocking the LLM translation of a goal to tasks
         # e.g., "Organize minha mudança" -> [Pesquisar imóveis, Pesquisar caminhão, etc]
+        goal_lower = goal.lower()
+        if "calendar" in goal_lower or "calendário" in goal_lower or "agenda" in goal_lower:
+            return StrategyPlan(
+                goal=goal,
+                tasks=[AbstractTask(id="task_1", description="Fetch calendar events")]
+            )
+            
         return StrategyPlan(
             goal=goal,
             tasks=[

@@ -30,14 +30,19 @@ class ExecutionPlanner:
         
         nodes = []
         for task in strategy_tasks:
-            # Mock mapping abstract task to a capability
-            capability = "knowledge.search" if "search" in task.description.lower() else "communication.send_message"
-            
+            desc = task.description.lower()
+            if "calendar" in desc or "agenda" in desc:
+                capability = "calendar.list_events"
+            elif "search" in desc:
+                capability = "knowledge.search"
+            else:
+                capability = "knowledge.search"
+                
             nodes.append(
                 IRTaskNode(
                     id=f"ir_{task.id}",
                     capability=capability,
-                    payload={"query": task.description}
+                    payload={"query": task.description, "date": "today"}
                 )
             )
             
