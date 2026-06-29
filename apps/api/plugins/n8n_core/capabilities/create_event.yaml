@@ -15,3 +15,4 @@ schema:
     end_time:
       type: string
       description: "The end time of the event in ISO-8601 format. If not specified by user, default to 1 hour after start_time."
+  required: [title, start_time, end_time]
