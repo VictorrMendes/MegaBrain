@@ -44,8 +44,8 @@ class ExecutionPlanner:
 
         system_prompt = f'''You are the Execution Planner.
 Map the following abstract tasks to the best available capabilities.
-For each task, select exactly ONE capability name from the available capabilities, and generate the required JSON payload according to its schema.
-If no capability matches, map it to "knowledge.search".
+For each task, select exactly ONE capability name from the available capabilities.
+CRITICAL: You MUST extract the relevant information from the task description and populate the `payload` object with the fields defined in the capability's `schema`.
 
 Available Capabilities:
 {caps_json}
@@ -57,9 +57,12 @@ Output ONLY valid JSON matching this schema:
 {{
   "nodes": [
     {{
-      "id": "ir_task_1",
-      "capability": "n8n.communication.send_email",
-      "payload": {{"subject": "hello", "body": "world"}}
+      "id": "<task_id>",
+      "capability": "<chosen_capability_name>",
+      "payload": {{
+        "<field_from_schema_1>": "<extracted_value_1>",
+        "<field_from_schema_2>": "<extracted_value_2>"
+      }}
     }}
   ]
 }}'''
@@ -79,15 +82,17 @@ Output ONLY valid JSON matching this schema:
             data = json.loads(content)
             nodes = []
             for n in data.get("nodes", []):
+                payload = n.get("payload", {})
+                logger.info("execution_planner.node_parsed", capability=n.get("capability"), payload=payload)
                 nodes.append(
                     IRTaskNode(
                         id=n.get("id", "ir_unknown"),
                         capability=n.get("capability", "knowledge.search"),
-                        payload=n.get("payload", {})
+                        payload=payload
                     )
                 )
                 
-            logger.info("execution_planner.success", num_nodes=len(nodes))
+            logger.info("execution_planner.success", num_nodes=len(nodes), raw_content=content)
             root_node = IRSequenceNode(id="root_sequence", nodes=nodes)
             return ExecutionIR(root=root_node)
             
