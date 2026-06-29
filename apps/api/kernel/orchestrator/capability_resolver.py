@@ -38,7 +38,10 @@ class CapabilityResolver:
             for plugin_name, manifest in plugin_manager.plugins.items():
                 caps = manifest.get("loaded_capabilities", {})
                 for cap_key, cap_data in caps.items():
-                    if cap_data.get("abstract_intent", "").lower() == abstract_intent.lower():
+                    abstract_lower = abstract_intent.lower()
+                    if (cap_data.get("abstract_intent", "").lower() == abstract_lower or 
+                        cap_data.get("name", "").lower() == abstract_lower or
+                        cap_data.get("name", "").replace("n8n.", "").lower() == abstract_lower):
                         node.capability = cap_data.get("name")
                         found = True
                         logger.debug("capability_resolver.match_found", abstract=abstract_intent, concrete=node.capability)
