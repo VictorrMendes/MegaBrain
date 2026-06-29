@@ -9,7 +9,7 @@ schema:
   properties:
     provider:
       type: string
-      description: "MANDATORY: You must extract the provider from the user's text. If the text says 'todoist', value is 'todoist'. If the text says 'notion', value is 'notion'. Do not default to notion."
+      description: "MANDATORY: You must extract the provider from the user's text. If the text says 'todoist' OR mentions 'tarefa', value is 'todoist'. If the text says 'notion' OR mentions 'anotação' or 'nota', value is 'notion'."
       enum: [todoist, notion]
     title:
       type: string
