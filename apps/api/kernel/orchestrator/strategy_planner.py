@@ -65,7 +65,7 @@ Output ONLY valid JSON matching this schema:
                     dependencies=t.get("dependencies", [])
                 ))
                 
-            logger.info("strategy_planner.success", num_tasks=len(tasks))
+            logger.info("strategy_planner.success", num_tasks=len(tasks), raw_content=content)
             return StrategyPlan(goal=goal, tasks=tasks)
             
         except Exception as e:
