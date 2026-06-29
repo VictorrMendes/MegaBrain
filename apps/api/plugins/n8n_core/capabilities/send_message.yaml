@@ -4,13 +4,17 @@ abstract_intent: communication.send_message
 schema:
   type: object
   properties:
-    platform:
+    provider:
       type: string
-      description: The platform to send the message to (e.g. whatsapp, slack).
-    recipient:
+      description: The provider to use (e.g. whatsapp/evolution, slack, telegram).
+      enum: [evolution, slack, telegram]
+    chat_id:
       type: string
-      description: The contact, phone number, or user id to send to.
+      description: The chat ID if sending via Telegram.
+    phone:
+      type: string
+      description: The phone number if sending via WhatsApp (evolution).
     message:
       type: string
       description: The content of the message.
-  required: [message, recipient]
+  required: [message, provider]
