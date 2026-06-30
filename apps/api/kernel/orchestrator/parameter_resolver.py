@@ -62,6 +62,9 @@ class ParameterResolver:
         return missing_params
 
     def _get_capability(self, capability_name: str) -> Dict[str, Any]:
+        if not plugin_manager.plugins:
+            plugin_manager.load_all()
+            
         for plugin_name, manifest in plugin_manager.plugins.items():
             caps = manifest.get("loaded_capabilities", {})
             if capability_name in caps:
