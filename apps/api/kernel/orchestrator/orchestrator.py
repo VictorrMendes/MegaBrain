@@ -146,8 +146,54 @@ class CognitiveOrchestrator:
                 workspace_id=str(workspace_id),
                 world_state=current_world_state
             )
+            
+            conv_id = (
+                UUID(request.conversation_id)
+                if request.conversation_id else None
+            )
 
-            # ── 1. Build base context ────────────────────────────────────────
+            # ── 1. Check for Suspended Execution (ResumeEngine) ──────────────
+            from kernel.orchestrator.resume_engine import ResumeEngine
+            resume_engine = ResumeEngine(self._sessions)
+            interaction_token = request.metadata.get("interaction_token") if hasattr(request, "metadata") and request.metadata else None
+            
+            resumed, resume_response = await resume_engine.try_resume(
+                message=request.message,
+                workspace_id=str(workspace_id),
+                conversation_id=str(conv_id) if conv_id else None,
+                interaction_token=interaction_token
+            )
+            
+            if resumed:
+                trace.finish(success=True)
+                
+                # Persist the user message and the system response
+                await self._persist_conversation(request, resume_response)
+                
+                # Fast-path return
+                return OrchestratorResponse(
+                    response=resume_response,
+                    decision=None, 
+                    trace=trace.nodes,
+                    confidence=1.0,
+                    risk=RiskLevel.low,
+                    sources=[],
+                    capabilities_used=[],
+                    missions_created=[],
+                    learning_actions=[],
+                    thinking_steps=trace.thinking_steps(),
+                    memory_used=0,
+                    knowledge_used=0,
+                    internet_sources=[],
+                    integrations_used=[],
+                    planner_used=False,
+                    mission_created=False,
+                    estimated_cost=0.0,
+                    estimated_time=0.0,
+                    approval_required=False,
+                )
+
+            # ── 2. Build base context ────────────────────────────────────────
             ctx = await self._build_context(request, workspace_id, trace)
             if on_step:
                 await on_step(trace.nodes[-1])
@@ -162,11 +208,7 @@ class CognitiveOrchestrator:
             if on_step:
                 await on_step(trace.nodes[-1])
 
-            # ── 4. Execute capabilities (Cognitive Kernel) ───────────────────────
-            conv_id = (
-                UUID(request.conversation_id)
-                if request.conversation_id else None
-            )
+            # ── 5. Execute capabilities (Cognitive Kernel) ───────────────────────
             requires_approval = (
                 decision.need_confirmation
                 or decision.risk_level != RiskLevel.low
@@ -207,13 +249,67 @@ class CognitiveOrchestrator:
                     concrete_ir = await capability_resolver.resolve(optimized_ir, exec_ctx.world_state)
                     
                     # 5. Compile IR -> ExecutionGraph (Nodes)
-                    steps = ir_compiler.compile(concrete_ir, str(conv_id) if conv_id else "system_exec")
+                    from models.execution import Execution, StepStatus, Interaction, InteractionType
+                    import uuid
+                    execution_id = uuid.uuid4()
+                    
+                    execution = Execution(
+                        id=execution_id,
+                        workspace_id=workspace_id,
+                        goal=goal,
+                        status="RUNNING"
+                    )
+                    
+                    steps = ir_compiler.compile(concrete_ir, str(execution_id))
+                    
+                    if self._sessions:
+                        async with self._sessions() as session:
+                            session.add(execution)
+                            for step in steps:
+                                session.add(step)
+                            await session.commit()
                     
                     # 6. State Runtime Execution
                     results = []
                     for step in steps:
                         await execution_runtime.execute_node(step, str(workspace_id))
-                        if getattr(step, 'error', None):
+                        
+                        if step.status == StepStatus.WAITING_INPUT.value:
+                            from kernel.orchestrator.clarification_engine import ClarificationEngine
+                            
+                            clarification_engine = ClarificationEngine(self._llm)
+                            missing_params = getattr(step, '_missing_parameters', [])
+                            
+                            question = await clarification_engine.generate_question(
+                                capability_name=step.capability,
+                                capability_description=step.capability, 
+                                missing_parameters=missing_params
+                            )
+                            
+                            # Create and Persist Interaction
+                            interaction = Interaction(
+                                interaction_type=InteractionType.CLARIFICATION.value,
+                                execution_id=step.execution_id,
+                                step_id=step.id,
+                                missing_parameters=[p.to_dict() for p in missing_params],
+                                question=question,
+                                conversation_id=conv_id,
+                                workspace_id=workspace_id
+                            )
+                            
+                            if self._sessions:
+                                async with self._sessions() as session:
+                                    # Use merge because step is from another session or detached
+                                    session.add(interaction)
+                                    execution.status = "WAITING_INPUT"
+                                    session.add(session.merge(execution))
+                                    session.add(session.merge(step))
+                                    await session.commit()
+                                
+                            results.append(question)
+                            break # Halt execution of further steps
+                            
+                        elif getattr(step, 'error', None):
                             results.append(f"Action '{step.capability}' failed: {step.error}")
                         else:
                             results.append(f"Action '{step.capability}' result: {getattr(step, 'result', step.output)}")
@@ -234,19 +330,19 @@ class CognitiveOrchestrator:
             if on_step:
                 await on_step(trace.nodes[-1])
 
-            # ── 5. Generate response ─────────────────────────────────────────
+            # ── 6. Generate response ─────────────────────────────────────────
             response_text = await self._generate(
                 request, ctx, cap_result, trace, on_token
             )
             if on_step:
                 await on_step(trace.nodes[-1])
 
-            # ── 6. Validate response ─────────────────────────────────────────
+            # ── 7. Validate response ─────────────────────────────────────────
             response_text = await self._validate_response(
                 response_text, cap_result, intent, trace
             )
 
-            # ── 7. Learn ─────────────────────────────────────────────────────
+            # ── 8. Learn ─────────────────────────────────────────────────────
             learning_actions = await self._maybe_learn(
                 request, decision, response_text, ctx,
                 cap_result.missions_created, workspace_id, trace,

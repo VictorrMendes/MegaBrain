@@ -10,10 +10,21 @@ from sqlalchemy.orm import relationship
 from models.base import Base
 
 
+class InteractionType(str, Enum):
+    CLARIFICATION = "CLARIFICATION"
+    APPROVAL = "APPROVAL"
+    CONFIRMATION = "CONFIRMATION"
+    FILE = "FILE"
+    AUTH = "AUTH"
+
+
 class ExecutionStatus(str, Enum):
     PENDING = "PENDING"
     READY = "READY"
     WAITING = "WAITING"
+    WAITING_INPUT = "WAITING_INPUT"
+    WAITING_APPROVAL = "WAITING_APPROVAL"
+    WAITING_EVENT = "WAITING_EVENT"
     BLOCKED = "BLOCKED"
     PAUSED = "PAUSED"
     RUNNING = "RUNNING"
@@ -29,6 +40,9 @@ class StepStatus(str, Enum):
     PENDING = "PENDING"
     READY = "READY"
     WAITING = "WAITING"
+    WAITING_INPUT = "WAITING_INPUT"
+    WAITING_APPROVAL = "WAITING_APPROVAL"
+    WAITING_EVENT = "WAITING_EVENT"
     BLOCKED = "BLOCKED"
     PAUSED = "PAUSED"
     RUNNING = "RUNNING"
@@ -92,3 +106,31 @@ class ExecutionStep(Base):
     finished_at = Column(DateTime(timezone=True), nullable=True)
 
     execution = relationship("Execution", back_populates="steps")
+
+
+class Interaction(Base):
+    """
+    State related to a suspended execution that is waiting for human input/approval.
+    """
+    __tablename__ = "interactions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    interaction_type = Column(String, default=InteractionType.CLARIFICATION.value, nullable=False)
+    interaction_token = Column(UUID(as_uuid=True), default=uuid.uuid4, nullable=False, unique=True)
+    
+    execution_id = Column(UUID(as_uuid=True), ForeignKey("executions.id"), nullable=False)
+    step_id = Column(UUID(as_uuid=True), ForeignKey("execution_steps.id"), nullable=True)
+    
+    missing_parameters = Column(JSONB, default=list) # List of parameter objects describing missing data (for CLARIFICATION)
+    question = Column(String, nullable=True) # Question or message to the user
+    
+    asked_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    retry_count = Column(Integer, default=0)
+    status = Column(String, default="PENDING", nullable=False)
+    
+    conversation_id = Column(UUID(as_uuid=True), nullable=True)
+    workspace_id = Column(UUID(as_uuid=True), nullable=False)
+    
+    execution = relationship("Execution", backref="interactions")
+    step = relationship("ExecutionStep")
