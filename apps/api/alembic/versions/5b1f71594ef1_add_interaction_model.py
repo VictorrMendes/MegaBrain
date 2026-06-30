@@ -19,13 +19,43 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    op.create_table('executions',
+        sa.Column('id', sa.UUID(), nullable=False),
+        sa.Column('workspace_id', sa.UUID(), nullable=False),
+        sa.Column('goal', sa.String(), nullable=False),
+        sa.Column('status', sa.String(), nullable=False),
+        sa.Column('context', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('finished_at', sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(['workspace_id'], ['workspaces.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id')
+    )
+
+    op.create_table('execution_steps',
+        sa.Column('id', sa.UUID(), nullable=False),
+        sa.Column('execution_id', sa.UUID(), nullable=False),
+        sa.Column('capability', sa.String(), nullable=False),
+        sa.Column('status', sa.String(), nullable=False),
+        sa.Column('payload', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column('output', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column('depends_on', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column('retry_count', sa.Integer(), nullable=True),
+        sa.Column('retry_policy', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column('approval_required', sa.Boolean(), nullable=True),
+        sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('finished_at', sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(['execution_id'], ['executions.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id')
+    )
+
     op.create_table('interactions',
         sa.Column('id', sa.UUID(), nullable=False),
         sa.Column('interaction_type', sa.String(), nullable=False),
-        sa.Column('interaction_token', sa.String(), nullable=False),
+        sa.Column('interaction_token', sa.UUID(), nullable=False),
         sa.Column('execution_id', sa.UUID(), nullable=False),
-        sa.Column('step_id', sa.UUID(), nullable=False),
-        sa.Column('conversation_id', sa.UUID(), nullable=False),
+        sa.Column('step_id', sa.UUID(), nullable=True),
+        sa.Column('conversation_id', sa.UUID(), nullable=True),
         sa.Column('workspace_id', sa.UUID(), nullable=False),
         sa.Column('missing_parameters', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column('question', sa.String(), nullable=True),
@@ -35,11 +65,11 @@ def upgrade() -> None:
         sa.Column('status', sa.String(), nullable=False),
         sa.ForeignKeyConstraint(['execution_id'], ['executions.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['step_id'], ['execution_steps.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id')
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('interaction_token')
     )
     op.create_index(op.f('ix_interactions_conversation_id'), 'interactions', ['conversation_id'], unique=False)
     op.create_index(op.f('ix_interactions_execution_id'), 'interactions', ['execution_id'], unique=False)
-    op.create_index(op.f('ix_interactions_interaction_token'), 'interactions', ['interaction_token'], unique=True)
     op.create_index(op.f('ix_interactions_step_id'), 'interactions', ['step_id'], unique=False)
     op.create_index(op.f('ix_interactions_workspace_id'), 'interactions', ['workspace_id'], unique=False)
 
@@ -47,7 +77,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index(op.f('ix_interactions_workspace_id'), table_name='interactions')
     op.drop_index(op.f('ix_interactions_step_id'), table_name='interactions')
-    op.drop_index(op.f('ix_interactions_interaction_token'), table_name='interactions')
     op.drop_index(op.f('ix_interactions_execution_id'), table_name='interactions')
     op.drop_index(op.f('ix_interactions_conversation_id'), table_name='interactions')
     op.drop_table('interactions')
+    op.drop_table('execution_steps')
+    op.drop_table('executions')
