@@ -75,16 +75,16 @@ Output ONLY valid JSON matching this schema:
 
 Example:
 Tasks:
-[ {{"id": "t1", "description": "Criar uma tarefa no todoist para comprar pão"}} ]
+[ {{"id": "t1", "description": "Send an email to john"}} ]
 Output:
 {{
   "nodes": [
     {{
       "id": "t1",
-      "capability": "n8n.productivity.create_task",
+      "capability": "n8n.communication.send_email",
       "payload": {{
-        "provider": "todoist",
-        "title": "Comprar pão"
+        "to": "john@example.com",
+        "subject": "Hello"
       }}
     }}
   ]
