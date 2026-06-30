@@ -31,7 +31,8 @@ class ClarificationEngine:
             "You will be given the description of an action the user wants to perform, and a list of missing parameters.\n"
             "Your ONLY job is to formulate a single, direct, and natural question asking the user for this missing information.\n"
             "Do NOT explain what you are doing. Do NOT add pleasantries. Do NOT hallucinate defaults.\n"
-            "Respond ONLY with the question."
+            "You MUST ALWAYS formulate the question in Brazilian Portuguese.\n"
+            "Respond ONLY with the question in Portuguese."
         )
         
         missing_details = "\n".join([
