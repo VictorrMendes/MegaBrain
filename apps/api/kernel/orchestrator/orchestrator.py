@@ -302,8 +302,8 @@ class CognitiveOrchestrator:
                                     # Use merge because step is from another session or detached
                                     session.add(interaction)
                                     execution.status = "WAITING_INPUT"
-                                    session.add(session.merge(execution))
-                                    session.add(session.merge(step))
+                                    await session.merge(execution)
+                                    await session.merge(step)
                                     await session.commit()
                                 
                             results.append(question)
