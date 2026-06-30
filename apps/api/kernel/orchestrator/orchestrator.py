@@ -270,6 +270,7 @@ class CognitiveOrchestrator:
                             await session.commit()
                     
                     # 6. State Runtime Execution
+                    suspended_question = None
                     results = []
                     for step in steps:
                         await execution_runtime.execute_node(step, str(workspace_id))
@@ -307,6 +308,7 @@ class CognitiveOrchestrator:
                                     await session.commit()
                                 
                             results.append(question)
+                            suspended_question = question
                             break # Halt execution of further steps
                             
                         elif getattr(step, 'error', None):
@@ -331,16 +333,20 @@ class CognitiveOrchestrator:
                 await on_step(trace.nodes[-1])
 
             # ── 6. Generate response ─────────────────────────────────────────
-            response_text = await self._generate(
-                request, ctx, cap_result, trace, on_token
-            )
-            if on_step:
-                await on_step(trace.nodes[-1])
+            if suspended_question:
+                response_text = suspended_question
+            else:
+                response_text = await self._generate(
+                    request, ctx, cap_result, trace, on_token
+                )
+                if on_step:
+                    await on_step(trace.nodes[-1])
 
             # ── 7. Validate response ─────────────────────────────────────────
-            response_text = await self._validate_response(
-                response_text, cap_result, intent, trace
-            )
+            if not suspended_question:
+                response_text = await self._validate_response(
+                    response_text, cap_result, intent, trace
+                )
 
             # ── 8. Learn ─────────────────────────────────────────────────────
             learning_actions = await self._maybe_learn(
