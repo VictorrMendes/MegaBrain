@@ -1,4 +1,3 @@
-import jsonschema
 from typing import Any, Dict, List
 from kernel.logger import get_logger
 from kernel.plugins.plugin_manager import plugin_manager
@@ -58,22 +57,6 @@ class ParameterResolver:
                 type_ = prop_details.get("type", "string")
                 missing_params.append(MissingParameter(name=field, description=desc, type=type_))
 
-        # 4. JSON Schema Validation (if all required fields are present)
-        if not missing_params:
-            try:
-                jsonschema.validate(instance=payload, schema=schema)
-            except jsonschema.exceptions.ValidationError as e:
-                # If it fails validation we consider it missing/invalid
-                path = ".".join([str(p) for p in e.path]) if e.path else "payload"
-                prop_details = properties.get(path, {}) if path in properties else {}
-                desc = prop_details.get("description", f"Invalid value for {path}: {e.message}")
-                type_ = prop_details.get("type", "string")
-                
-                field_name = path if path and path != "payload" else e.validator_value
-                if isinstance(field_name, list) and len(field_name) > 0:
-                     field_name = field_name[0]
-                
-                missing_params.append(MissingParameter(name=str(field_name), description=desc, type=type_))
 
         logger.info("parameter_resolver.debug_missing", missing=[p.name for p in missing_params])
         return missing_params
