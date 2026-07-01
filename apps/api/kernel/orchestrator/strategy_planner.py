@@ -31,19 +31,33 @@ class StrategyPlanner:
             logger.warning("strategy_planner.no_llm_fallback")
             return StrategyPlan(goal=goal, tasks=[AbstractTask(id="task_1", description=goal)])
 
-        system_prompt = '''You are the Strategy Planner. 
+        from kernel.plugins.plugin_manager import plugin_manager
+        if not plugin_manager.plugins:
+            plugin_manager.load_all()
+            
+        caps_list = []
+        for plugin in plugin_manager.plugins.values():
+            for cap_name, cap_data in plugin.get("loaded_capabilities", {}).items():
+                desc = cap_data.get("description", "")
+                caps_list.append(f"  - \\"{cap_name}\\": {desc}")
+                
+        caps_str = "\\n".join(caps_list)
+
+        system_prompt = f'''You are the Strategy Planner. 
 Break the following user goal into discrete abstract tasks.
 Output ONLY valid JSON matching this schema:
-{
+{{
   "tasks": [
-    {
+    {{
       "id": "task_1",
       "description": "Clear description of the action",
       "dependencies": []
-    }
+    }}
   ]
-}
-IMPORTANT: Ensure you include all specific tools, platforms, or apps mentioned by the user in the 'description' if they specify any. Do not invent tools.'''
+}}
+IMPORTANT: Do not invent tools. Map the goal to the available capabilities.
+Available Capabilities:
+{caps_str}'''
         
         try:
             result = await llm.chat([
