@@ -43,7 +43,7 @@ Output ONLY valid JSON matching this schema:
     }
   ]
 }
-IMPORTANT: Ensure you include all specific tools, platforms, or apps mentioned by the user in the 'description' if they specify any. Do not invent tools.
+IMPORTANT: Ensure you include all specific tools, platforms, or apps mentioned by the user in the 'description' if they specify any. Do not invent tools.'''
         
         try:
             result = await llm.chat([
