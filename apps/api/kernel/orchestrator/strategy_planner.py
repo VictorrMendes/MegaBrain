@@ -39,7 +39,7 @@ class StrategyPlanner:
         for plugin in plugin_manager.plugins.values():
             for cap_name, cap_data in plugin.get("loaded_capabilities", {}).items():
                 desc = cap_data.get("description", "")
-                caps_list.append(f"  - \\"{cap_name}\\": {desc}")
+                caps_list.append(f"  - '{cap_name}': {desc}")
                 
         caps_str = "\\n".join(caps_list)
 
